@@ -1,0 +1,15 @@
+/_bmad
+/node_modules
+/_bmad-output
+/.claude
+/.agents
+/.agent
+/.opencode
+/.github
+.env
+docs
+/venv
+/.vscode
+/.fastchat
+/file
+/output

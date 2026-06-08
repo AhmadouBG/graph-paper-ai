@@ -1,0 +1,26 @@
+[project]
+name = "graph-paper-ai"
+version = "0.1.0"
+description = "Vectorless Graph-RAG for academic papers"
+requires-python = ">=3.11"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+
+# E (pycodestyle errors): wrong indentation, blank lines, spaces                                                                  
+# F (pyflakes): unused imports, undefined variables                                                                         
+# I (isort): imports not in the right order                                                                     
+# N (pep8-naming): class names should be PascalCase, functions snake_case                                                         
+# W (warnings): trailing whitespace, line breaks  
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+# python parse_pdf.py paper.pdf              # PyMuPDF (fast, default)
+# python parse_pdf.py paper.pdf --marker      # Marker (higher quality, may download models)
+# python parse_pdf.py paper.pdf --marker --marker-timeout 300  # Longer wait for big model download
