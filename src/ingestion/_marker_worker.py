@@ -2,7 +2,6 @@
 Isolated in a subprocess because Marker (via sklearn/pyarrow) can crash
 on certain Windows configurations with an access violation."""
 import sys
-from pathlib import Path
 
 pdf_path = sys.argv[1]
 

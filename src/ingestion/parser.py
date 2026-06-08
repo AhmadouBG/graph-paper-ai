@@ -2,30 +2,15 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 import fitz
 
 from src.exceptions import IngestionError
+from src.ingestion import ImageInfo, ProcessingResult
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class ImageInfo:
-    node_id: str
-    path: Path
-    page: int
-    bbox: Tuple[float, float, float, float]
-
-
-@dataclass
-class ProcessingResult:
-    markdown: str
-    images: List[ImageInfo] = field(default_factory=list)
-    metadata: dict = field(default_factory=dict)
 
 
 FIGURE_LABELS = re.compile(

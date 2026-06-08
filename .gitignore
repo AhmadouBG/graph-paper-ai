@@ -13,3 +13,5 @@ docs
 /.fastchat
 /file
 /output
+/.ruff_cache
+/.pytest_cache
