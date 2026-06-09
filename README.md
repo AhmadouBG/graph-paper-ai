@@ -1,1 +1,1 @@
-# video-context-ai
+# graph-paper-ai
