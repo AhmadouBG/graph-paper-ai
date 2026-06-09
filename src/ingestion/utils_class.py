@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Tuple
+
 
 @dataclass
 class ImageInfo:
@@ -14,6 +17,7 @@ class ImageInfo:
 class ProcessingResult:
     markdown: str
     images: List[ImageInfo] = field(default_factory=list)
+    edges: List[CoLocatedEdge] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
 
 @dataclass
@@ -22,3 +26,12 @@ class CrossReference:
     reference_type: str
     context: str
     page: Optional[int]
+
+
+@dataclass
+class CoLocatedEdge:
+    source_id: str
+    target_id: str
+    edge_type: str = "co-located"
+    distance: float = 0.0
+    page: int = 0

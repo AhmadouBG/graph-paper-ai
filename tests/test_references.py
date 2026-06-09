@@ -45,7 +45,7 @@ def test_empty_string():
     assert extract_cross_references("") == []
 
 
-def test_figure_plural_not_matched():
+def test_figure_plural_list_continuation():
     md = "Figures 2 and 3 show different results."
     result = extract_cross_references(md)
     assert len(result) == 2
@@ -103,3 +103,27 @@ def test_lowercase_references():
     ids = {r.target_node_id for r in result}
     assert "fig_2" in ids
     assert "table_1" in ids
+
+
+def test_figure_with_letter_suffix():
+    md = "As shown in Figure 3a, the model converges. Figure 3b shows the ablation."
+    result = extract_cross_references(md)
+    ids = {r.target_node_id for r in result}
+    assert "fig_3a" in ids
+    assert "fig_3b" in ids
+
+
+def test_figure_singular_with_list_continuation():
+    md = "Figure 2 and 3 show different results."
+    result = extract_cross_references(md)
+    assert len(result) == 2
+    assert result[0].target_node_id == "fig_2"
+    assert result[1].target_node_id == "fig_3"
+
+
+def test_fig_abbreviation_with_list_continuation():
+    md = "Fig. 2 and 3 illustrate the architecture."
+    result = extract_cross_references(md)
+    assert len(result) == 2
+    assert result[0].target_node_id == "fig_2"
+    assert result[1].target_node_id == "fig_3"

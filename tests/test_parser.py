@@ -70,6 +70,7 @@ def test_parse_paper_metadata():
         assert "source" in result.metadata
         assert "page_count" in result.metadata
         assert result.metadata["page_count"] == 1
+        assert isinstance(result.edges, list)
 
 
 def test_process_math_formulas():

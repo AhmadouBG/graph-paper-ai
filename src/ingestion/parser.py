@@ -8,7 +8,8 @@ from typing import List, Optional, Tuple
 import fitz
 
 from src.exceptions import IngestionError
-from src.ingestion import ImageInfo, ProcessingResult
+from src.ingestion.spatial import detect_co_located_blocks
+from src.ingestion.utils_class import ImageInfo, ProcessingResult
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +141,8 @@ def _process_math_formulas(markdown: str) -> str:
 
 
 def _try_marker_subprocess(pdf_path: Path, timeout_sec: int = 120) -> Optional[str]:
-    import subprocess, sys as _sys
+    import subprocess
+    import sys as _sys
     from pathlib import Path as _Path
 
     worker = _Path(__file__).parent / "_marker_worker.py"
@@ -192,12 +194,15 @@ def parse_paper(
             markdown = _extract_text_fitz(doc)
 
         markdown = _process_math_formulas(markdown)
+
+        edges = detect_co_located_blocks(doc)
     finally:
         doc.close()
 
     return ProcessingResult(
         markdown=markdown,
         images=images,
+        edges=edges,
         metadata={
             "source": pdf_path.name,
             "page_count": page_count,

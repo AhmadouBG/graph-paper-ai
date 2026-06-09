@@ -3,12 +3,14 @@ from __future__ import annotations
 import re
 from typing import List
 
-from src.ingestion import CrossReference
+from src.ingestion.utils_class import CrossReference
 
 SINGLE_PATTERN = re.compile(
-    r"\b(?:Fig(?:ure)?s?\.?|Table|Section|Equation)\s+(\d+(?:\.\d+)*)\b",
+    r"\b(?:Fig(?:ure)?s?\.?|Table|Section|Equation)\s+(\d+(?:\.\d+)*)([a-z])?\b",
     re.IGNORECASE,
 )
+
+LIST_CONTINUATION = re.compile(r"(?:and|,)\s*(\d+(?:\.\d+)*)\b")
 
 NODE_PREFIX: dict[str, str] = {
     "figure": "fig",
@@ -16,8 +18,6 @@ NODE_PREFIX: dict[str, str] = {
     "section": "section",
     "equation": "equation",
 }
-
-LIST_CONTINUATION = re.compile(r"\b(?:and|,)\s*(\d+(?:\.\d+)*)\b")
 
 
 def _resolve_type(label: str) -> str:
@@ -76,9 +76,10 @@ def extract_cross_references(markdown: str) -> List[CrossReference]:
     for match in SINGLE_PATTERN.finditer(markdown):
         label = match.group(0).split()[0]
         num_str = match.group(1)
+        suffix = match.group(2) or ""
         ref_type = _resolve_type(label)
         prefix = NODE_PREFIX.get(ref_type, ref_type)
-        node_id = f"{prefix}_{num_str}".replace(".", "_")
+        node_id = f"{prefix}_{num_str}{suffix}".replace(".", "_")
 
         if node_id in seen:
             continue
@@ -92,8 +93,7 @@ def extract_cross_references(markdown: str) -> List[CrossReference]:
             page=None,
         ))
 
-        if ref_type == "figure" and label.lower().rstrip(".").endswith("s"):
+        if ref_type == "figure":
             refs.extend(_extract_list_numbers(markdown, match, seen, prefix))
 
-    refs.sort(key=lambda r: markdown.find(r.context[:20]) if r.context else 0)
     return refs
