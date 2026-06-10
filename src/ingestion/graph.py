@@ -141,7 +141,7 @@ def build_adjacency_map(
                 page=None,
                 bbox=None,
             )
-            graph.add_edge(sec["_node_id"], f["node_id"], edge_type="contains")
+            graph.add_edge(sec["_node_id"], f["node_id"], edge_type="formula")
 
     for img in parsed.images:
         graph.add_node(
