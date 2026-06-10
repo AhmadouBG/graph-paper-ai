@@ -111,3 +111,23 @@ class TestBfsTraverse:
         g = _sample_graph()
         result = bfs_traverse(g, ["section_1"], depth=2)
         assert not result.truncated
+
+    def test_edge_types_filters_by_type(self):
+        g = _sample_graph()
+        result = bfs_traverse(g, ["section_1"], depth=2, edge_types=["contains"])
+        node_ids = {n.node_id for n in result.nodes}
+        assert "fig_1" in node_ids
+        assert "table_1" in node_ids
+        assert "text_1" not in node_ids
+
+    def test_edge_types_none_follows_all(self):
+        g = _sample_graph()
+        result = bfs_traverse(g, ["section_1"], depth=2, edge_types=None)
+        node_ids = {n.node_id for n in result.nodes}
+        assert "text_1" in node_ids
+
+    def test_edge_types_multiple(self):
+        g = _sample_graph()
+        result = bfs_traverse(g, ["section_1"], depth=2, edge_types=["contains", "captions"])
+        node_ids = {n.node_id for n in result.nodes}
+        assert "text_1" in node_ids
