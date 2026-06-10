@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from src.query import Anchor, QueryParseResult
+from src.query import Anchor, AnchorType, QueryParseResult
 from src.query.anchor_extraction import (
-    AnchorType,
+    QueryType,
     _to_node_id,
     extract_query_anchors,
 )
@@ -13,10 +13,15 @@ class TestExtractQueryAnchors:
         result = extract_query_anchors("Show Figure 3")
         assert isinstance(result, QueryParseResult)
 
+    def test_none_input_returns_no_anchors(self):
+        result = extract_query_anchors(None)
+        assert not result.has_anchors
+        assert len(result.anchors) == 0
+
     def test_extract_figure_anchor(self):
         result = extract_query_anchors("Show Figure 3")
         assert result.has_anchors
-        assert result.query_type == "structural"
+        assert result.query_type == QueryType.STRUCTURAL
         assert len(result.anchors) == 1
         assert result.anchors[0].node_id == "fig_3"
         assert result.anchors[0].anchor_type == AnchorType.FIGURE
@@ -51,7 +56,7 @@ class TestExtractQueryAnchors:
     def test_no_anchor_semantic_fallback(self):
         result = extract_query_anchors("what is the main result?")
         assert not result.has_anchors
-        assert result.query_type == "semantic"
+        assert result.query_type == QueryType.SEMANTIC
         assert len(result.anchors) == 0
 
     def test_ambiguous_reference_no_error(self):
@@ -74,6 +79,26 @@ class TestExtractQueryAnchors:
         result = extract_query_anchors("What is Figure 3a?")
         assert result.has_anchors
         assert result.anchors[0].node_id == "fig_3a"
+
+    def test_hierarchical_figure_number(self):
+        result = extract_query_anchors("See Figure 1.2")
+        assert result.has_anchors
+        assert result.anchors[0].node_id == "fig_1_2"
+
+    def test_hierarchical_table_number(self):
+        result = extract_query_anchors("Check Table 2.1")
+        assert result.has_anchors
+        assert result.anchors[0].node_id == "table_2_1"
+
+    def test_sec_abbreviation(self):
+        result = extract_query_anchors("See Sec. 4")
+        assert result.has_anchors
+        assert result.anchors[0].node_id == "section_4"
+
+    def test_sect_abbreviation(self):
+        result = extract_query_anchors("See Sect. 4")
+        assert result.has_anchors
+        assert result.anchors[0].node_id == "section_4"
 
     def test_empty_string_returns_no_anchors(self):
         result = extract_query_anchors("")
@@ -115,12 +140,12 @@ class TestQueryParseResultDataclass:
         result = QueryParseResult()
         assert len(result.anchors) == 0
         assert result.has_anchors is False
-        assert result.query_type == "semantic"
+        assert result.query_type == QueryType.SEMANTIC
 
     def test_structural_query_type(self):
         result = QueryParseResult(
             anchors=[Anchor(node_id="fig_1", anchor_type=AnchorType.FIGURE, label="1")],
             has_anchors=True,
-            query_type="structural",
+            query_type=QueryType.STRUCTURAL,
         )
-        assert result.query_type == "structural"
+        assert result.query_type == QueryType.STRUCTURAL
