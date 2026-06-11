@@ -151,7 +151,7 @@ class TestPrintTree:
     def test_single_node(self):
         nodes = [SectionNode(node_id="sec_a", title="A", page=3)]
         result = print_tree(nodes)
-        assert "[0000] A (p.3)" in result
+        assert "└── A (page 3) (node: sec_a)" in result
 
     def test_multiple_roots(self):
         nodes = [
@@ -159,10 +159,10 @@ class TestPrintTree:
             SectionNode(node_id="sec_b", title="B", page=2),
         ]
         result = print_tree(nodes)
-        assert "[0000] A (p.1)" in result
-        assert "[0001] B (p.2)" in result
+        assert "├── A (page 1) (node: sec_a)" in result
+        assert "└── B (page 2) (node: sec_b)" in result
 
-    def test_increments_ids_across_children(self):
+    def test_shows_hierarchy_with_connectors(self):
         nodes = [
             SectionNode(
                 node_id="sec_a", title="A", page=1,
@@ -173,9 +173,8 @@ class TestPrintTree:
             ),
         ]
         result = print_tree(nodes)
-        lines = [ln for ln in result.split("\n") if "B " in ln or "C " in ln]
-        assert "[0001] B" in lines[0]
-        assert "[0002] C" in lines[1]
+        assert "    ├── B (page 2) (node: sec_b)" in result
+        assert "    └── C (page 3) (node: sec_c)" in result
 
     def test_empty_list(self):
         assert print_tree([]) == ""
@@ -183,8 +182,14 @@ class TestPrintTree:
     def test_no_page_omits_suffix(self):
         nodes = [SectionNode(node_id="sec_a", title="A", page=None)]
         result = print_tree(nodes)
-        assert "(p." not in result
-        assert "[0000] A" in result
+        assert "(page" not in result
+        assert "└── A (node: sec_a)" in result
+
+    def test_hide_ids_with_show_ids_false(self):
+        nodes = [SectionNode(node_id="sec_a", title="A", page=1)]
+        result = print_tree(nodes, show_ids=False)
+        assert "(node:" not in result
+        assert "└── A (page 1)" in result
 
 
 class TestFindSectionPage:

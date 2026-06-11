@@ -94,16 +94,16 @@ def _section_order(graph: nx.DiGraph, node_id: str) -> int:
     return graph.nodes[node_id].get("_section_idx", 0)
 
 
-def print_tree(nodes: List[SectionNode], idx_start: int = 0) -> str:
+def print_tree(nodes: List[SectionNode], show_ids: bool = True) -> str:
     lines: List[str] = []
-    idx = idx_start
     for i, node in enumerate(nodes):
         is_last = i == len(nodes) - 1
         connector = "└── " if is_last else "├── "
-        page_str = f" (p.{node.page})" if node.page is not None else ""
-        lines.append(f"{connector}[{idx:04d}] {node.title}{page_str}")
-        idx += 1
-        child_lines = print_tree(node.children, idx)
+        page_str = f" (page {node.page})" if node.page is not None else ""
+        id_str = f" (node: {node.node_id})" if show_ids else ""
+        line = f"{connector}{node.title}{page_str}{id_str}"
+        lines.append(line)
+        child_lines = print_tree(node.children, show_ids=show_ids)
         if child_lines:
             indent = "    " if is_last else "│   "
             for line in child_lines.split("\n"):

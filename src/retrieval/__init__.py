@@ -1,7 +1,7 @@
-from src.retrieval.traversal import ContextNode, ContextResult, bfs_traverse
+from src.retrieval.tree_search import TreeSearchResult, answer_query, tree_search
 
 __all__ = [
-    "bfs_traverse",
-    "ContextNode",
-    "ContextResult",
+    "answer_query",
+    "tree_search",
+    "TreeSearchResult",
 ]
