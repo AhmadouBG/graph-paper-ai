@@ -106,16 +106,18 @@ def build_adjacency_map(
     sections = _parse_sections(parsed.markdown)
     parent_stack: List[str] = []
 
-    for sec in sections:
+    for idx, sec in enumerate(sections):
         node_id = _section_node_id(sec["title"], sec["level"], used_section_ids)
         used_section_ids.add(node_id)
         sec["_node_id"] = node_id
         graph.add_node(
             node_id,
             node_type="section",
+            title=sec["title"],
             content=sec["content"],
             page=None,
             bbox=None,
+            _section_idx=idx,
         )
 
         while parent_stack:

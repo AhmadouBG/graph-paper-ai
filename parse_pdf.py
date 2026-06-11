@@ -43,7 +43,7 @@ def main():
         for key, value in result.metadata.items():
             print(f"  {key}: {value}")
 
-        print(f"\n=== EXTRACTED IMAGES ===")
+        print("\n=== EXTRACTED IMAGES ===")
         print(f"  Images extracted to: {output_dir / 'images'}")
         print(f"  Number of images extracted: {len(result.images)}")
         for img in result.images:
