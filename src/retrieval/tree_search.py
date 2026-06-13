@@ -2,27 +2,26 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import networkx as nx
 
-from src.ingestion.tree import build_section_tree
-from src.ingestion.tree import print_tree as _render_tree
+from src.ingestion.tree import build_node_id_map, build_section_tree, print_tree as _render_tree
 from src.llm.ollama_client import OllamaClient, OllamaMessage
 
 TREE_SEARCH_PROMPT = (
     "You are a document retrieval system. Given a user query and a document's"
-    " section tree, identify the most relevant sections by their node IDs.\n"
+    " section tree, identify the most relevant sections by their [XXXX] IDs.\n"
     "\n"
-    "Return ONLY a comma-separated list of the most relevant node IDs,"
-    " nothing else. Example: section_introduction,section_background\n"
+    "Return ONLY a comma-separated list of the most relevant section IDs,"
+    " nothing else. Example: 0000,0003,0005\n"
     "\n"
     "Document tree:\n"
     "{tree}\n"
     "\n"
     "User query: {query}\n"
     "\n"
-    "Relevant node IDs:"
+    "Relevant section IDs:"
 )
 
 ANSWER_PROMPT = (
@@ -36,7 +35,7 @@ ANSWER_PROMPT = (
     "Answer:"
 )
 
-NODE_ID_PATTERN = re.compile(r"[a-zA-Z_][a-zA-Z0-9_-]*")
+ID_PATTERN = re.compile(r"\b(\d{4})\b")
 
 
 @dataclass
@@ -46,26 +45,30 @@ class TreeSearchResult:
 
 
 def _parse_selected_ids(response: str, max_ids: int = 20) -> List[str]:
-    section_ids: List[str] = []
-    for m in NODE_ID_PATTERN.finditer(response):
-        node_id = m.group(0)
-        if node_id.startswith("section_") and node_id not in section_ids:
-            section_ids.append(node_id)
-    return section_ids[:max_ids]
+    seen: set[str] = set()
+    result: List[str] = []
+    for m in ID_PATTERN.finditer(response):
+        seq = m.group(1)
+        if seq not in seen:
+            seen.add(seq)
+            result.append(seq)
+    return result[:max_ids]
 
 
 def _fetch_section_content(
     graph: nx.DiGraph,
     selected_ids: List[str],
+    node_id_map: Dict[str, str],
 ) -> str:
     parts: List[str] = []
-    for node_id in selected_ids:
-        if not graph.has_node(node_id):
+    for seq_id in selected_ids:
+        graph_node_id = node_id_map.get(seq_id)
+        if not graph_node_id or not graph.has_node(graph_node_id):
             continue
-        attr = graph.nodes[node_id]
-        title = attr.get("title", node_id)
+        attr = graph.nodes[graph_node_id]
+        title = attr.get("title", graph_node_id)
         content = attr.get("content", "")
-        parts.append(f"[{node_id}] {title}\n{content}")
+        parts.append(f"[{seq_id}] {title}\n{content}")
     return "\n\n".join(parts)
 
 
@@ -74,16 +77,19 @@ def tree_search(
     graph: nx.DiGraph,
     llm_client: OllamaClient,
     tree: Optional[str] = None,
+    node_id_map: Optional[Dict[str, str]] = None,
     model: Optional[str] = None,
 ) -> TreeSearchResult:
     if tree is None:
         section_nodes = build_section_tree(graph)
-        tree = _render_tree(section_nodes, show_ids=True)
+        tree = _render_tree(section_nodes)
+    if node_id_map is None:
+        node_id_map = build_node_id_map(graph)
     prompt = TREE_SEARCH_PROMPT.format(tree=tree, query=query)
     messages = [OllamaMessage(role="user", content=prompt)]
     response = llm_client.chat(messages, model=model)
     selected_ids = _parse_selected_ids(response)
-    context = _fetch_section_content(graph, selected_ids)
+    context = _fetch_section_content(graph, selected_ids, node_id_map)
     return TreeSearchResult(selected_ids=selected_ids, context=context)
 
 

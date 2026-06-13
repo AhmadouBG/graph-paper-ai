@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import networkx as nx
 
@@ -16,8 +16,9 @@ PAGE_SECTION_RE = re.compile(r"^Page \d+$")
 class SectionNode:
     node_id: str
     title: str
-    page: Optional[int]
-    children: List[SectionNode] = field(default_factory=list)
+    page_index: Optional[int]
+    text: str
+    nodes: List[SectionNode] = field(default_factory=list)
 
 
 def _find_section_page(markdown: str, section_start: int) -> int:
@@ -44,6 +45,16 @@ def build_page_index(markdown: str) -> str:
     return "\n".join(lines)
 
 
+def build_node_id_map(graph: nx.DiGraph) -> Dict[str, str]:
+    mapping: Dict[str, str] = {}
+    for n, attr in graph.nodes(data=True):
+        if attr.get("node_type") == "section":
+            idx = attr.get("_section_idx")
+            if idx is not None:
+                mapping[f"{idx:04d}"] = n
+    return mapping
+
+
 def build_section_tree(graph: nx.DiGraph) -> List[SectionNode]:
     is_page_marker: set[str] = set()
     for n, attr in graph.nodes(data=True):
@@ -64,48 +75,66 @@ def build_section_tree(graph: nx.DiGraph) -> List[SectionNode]:
 
     roots = sorted(
         [n for n in content_sections if n not in has_non_marker_parent],
-        key=lambda n: _section_order(graph, n),
+        key=lambda n: graph.nodes[n].get("_section_idx", 0),
     )
 
-    def _build(node_id: str) -> SectionNode:
-        attr = graph.nodes[node_id]
-        children: List[SectionNode] = []
+    ordered: List[str] = []
+    def _collect(node_id: str) -> None:
+        ordered.append(node_id)
         for _, v, d in graph.out_edges(node_id, data=True):
             if d.get("edge_type") != "contains":
                 continue
             if v in is_page_marker:
                 for _, gv, gd in graph.out_edges(v, data=True):
                     if gd.get("edge_type") == "contains" and gv in content_sections:
-                        children.append(_build(gv))
+                        _collect(gv)
             elif v in content_sections:
-                children.append(_build(v))
-        children.sort(key=lambda c: _section_order(graph, c.node_id))
+                _collect(v)
+
+    for r in roots:
+        _collect(r)
+
+    gid_to_seq = {gid: f"{i:04d}" for i, gid in enumerate(ordered)}
+
+    def _build(graph_node_id: str) -> SectionNode:
+        attr = graph.nodes[graph_node_id]
+        child_pairs: List[tuple[int, SectionNode]] = []
+        for _, v, d in graph.out_edges(graph_node_id, data=True):
+            if d.get("edge_type") != "contains":
+                continue
+            if v in is_page_marker:
+                for _, gv, gd in graph.out_edges(v, data=True):
+                    if gd.get("edge_type") == "contains" and gv in content_sections:
+                        child = _build(gv)
+                        child_pairs.append((
+                            graph.nodes[gv].get("_section_idx", 0), child,
+                        ))
+            elif v in content_sections:
+                child = _build(v)
+                child_pairs.append((
+                    graph.nodes[v].get("_section_idx", 0), child,
+                ))
+        child_pairs.sort(key=lambda p: p[0])
+        children = [p[1] for p in child_pairs]
+
         return SectionNode(
-            node_id=node_id,
-            title=attr.get("title", node_id),
-            page=attr.get("page"),
-            children=children,
+            node_id=gid_to_seq.get(graph_node_id, "0000"),
+            title=attr.get("title", graph_node_id),
+            page_index=attr.get("page"),
+            text=attr.get("content", ""),
+            nodes=children,
         )
 
     return [_build(r) for r in roots]
 
 
-def _section_order(graph: nx.DiGraph, node_id: str) -> int:
-    return graph.nodes[node_id].get("_section_idx", 0)
-
-
-def print_tree(nodes: List[SectionNode], show_ids: bool = True) -> str:
+def print_tree(nodes: List[SectionNode], indent: str = "") -> str:
     lines: List[str] = []
     for i, node in enumerate(nodes):
         is_last = i == len(nodes) - 1
         connector = "└── " if is_last else "├── "
-        page_str = f" (page {node.page})" if node.page is not None else ""
-        id_str = f" (node: {node.node_id})" if show_ids else ""
-        line = f"{connector}{node.title}{page_str}{id_str}"
-        lines.append(line)
-        child_lines = print_tree(node.children, show_ids=show_ids)
-        if child_lines:
-            indent = "    " if is_last else "│   "
-            for line in child_lines.split("\n"):
-                lines.append(f"{indent}{line}")
-    return "\n".join(lines)
+        page_str = f" (page {node.page_index})" if node.page_index is not None else ""
+        lines.append(f"{indent}{connector}{node.title}{page_str} [{node.node_id}]")
+        child_indent = indent + ("    " if is_last else "│   ")
+        lines.append(print_tree(node.nodes, indent=child_indent))
+    return "\n".join(lines).rstrip("\n")
