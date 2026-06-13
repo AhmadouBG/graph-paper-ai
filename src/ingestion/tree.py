@@ -57,14 +57,47 @@ def build_node_id_map(graph: nx.DiGraph) -> Dict[str, str]:
 
 def build_section_tree(graph: nx.DiGraph) -> List[SectionNode]:
     is_page_marker: set[str] = set()
+    page_numbers: dict[str, int] = {}  # Map content node IDs to their parent page number
+
+    # 1. Identify page markers and extract their exact page number from title/attributes
     for n, attr in graph.nodes(data=True):
         if attr.get("node_type") == "section" and PAGE_SECTION_RE.match(attr.get("title", "")):
             is_page_marker.add(n)
+            
+            # Extract the raw page digits from the title using your existing PAGE_SECTION_RE
+            match = PAGE_SECTION_RE.match(attr.get("title", ""))
+            if match:
+                try:
+                    # Assumes your regex captures the digits (e.g., r"Page (\d+)")
+                    page_numbers[n] = int(match.group(1))
+                except (IndexError, ValueError):
+                    # Fallback to an attribute look-up if group extraction is unavailable
+                    page_numbers[n] = attr.get("page", 0)
 
     content_sections = [
         n for n, attr in graph.nodes(data=True)
         if attr.get("node_type") == "section" and n not in is_page_marker
     ]
+
+    # 2. Map every content section to its associated page marker
+    # Look at graph.in_edges to see which page markers point to this section
+    node_to_page_idx: dict[str, int] = {}
+    for node_id in content_sections:
+        # Check node attributes first as a primary fallback
+        fallback_page = graph.nodes[node_id].get("page")
+        
+        # Traverse backwards up the incoming edges to find parent page blocks
+        parent_pages = [
+            page_numbers[u] for u, v, d in graph.in_edges(node_id, data=True)
+            if u in is_page_marker and d.get("edge_type") == "contains"
+        ]
+        
+        if parent_pages:
+            node_to_page_idx[node_id] = parent_pages[0]  # Grab the explicit structural parent page
+        elif fallback_page is not None:
+            node_to_page_idx[node_id] = fallback_page
+        else:
+            node_to_page_idx[node_id] = 0
 
     has_non_marker_parent = {
         v for u, v, d in graph.out_edges(data=True)
@@ -120,12 +153,14 @@ def build_section_tree(graph: nx.DiGraph) -> List[SectionNode]:
         return SectionNode(
             node_id=gid_to_seq.get(graph_node_id, "0000"),
             title=attr.get("title", graph_node_id),
-            page_index=attr.get("page"),
+            # Resolve exact page index from the mapping table created above
+            page_index=node_to_page_idx.get(graph_node_id, attr.get("page")),
             text=attr.get("content", ""),
             nodes=children,
         )
 
     return [_build(r) for r in roots]
+
 
 
 def print_tree(nodes: List[SectionNode], indent: str = "") -> str:
