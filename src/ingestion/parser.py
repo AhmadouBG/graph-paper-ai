@@ -10,7 +10,6 @@ from typing import List, Optional, Tuple
 import fitz
 
 from src.exceptions import IngestionError
-from src.ingestion.spatial import detect_co_located_blocks
 from src.ingestion.utils_class import ImageInfo, ProcessingResult
 
 logger = logging.getLogger(__name__)
@@ -123,6 +122,15 @@ def _extract_images(
                     logger.warning("Failed to render page %d: %s", page_num + 1, e)
 
     return images
+
+
+def _extract_text_fitz(doc: fitz.Document) -> str:
+    pages: List[str] = []
+    for page_num in range(doc.page_count):
+        page = doc[page_num]
+        text = page.get_text("text")
+        pages.append(f"## Page {page_num + 1}\n\n{text}")
+    return "\n\n".join(pages)
 
 
 def _process_math_formulas(markdown: str) -> str:
@@ -378,7 +386,7 @@ def parse_paper(
             markdown = _extract_text_fitz(doc)
 
         markdown = _process_math_formulas(markdown)
-        edges = detect_co_located_blocks(doc)
+        edges = []
 
     finally:
         doc.close()
