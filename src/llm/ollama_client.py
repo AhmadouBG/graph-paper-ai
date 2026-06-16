@@ -13,7 +13,7 @@ class OllamaMessage:
 
 
 class OllamaClient:
-    def __init__(self, base_url: str = "http://localhost:11434", model: str = "llama3"):
+    def __init__(self, base_url: str = "http://localhost:11434", model: str = "qwen2.5vl:3b"):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self._client = httpx.Client(timeout=120.0)
