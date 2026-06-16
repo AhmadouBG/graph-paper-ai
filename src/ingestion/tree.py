@@ -10,7 +10,7 @@ from src.ingestion.graph import _parse_sections
 
 PAGE_MARKER_RE = re.compile(r"^## Page (\d+)", re.MULTILINE)
 
-PAGE_SECTION_RE = re.compile(r"^##\s+Page\s+(\d+)", re.IGNORECASE)
+PAGE_SECTION_RE = re.compile(r"^Page\s+(\d+)$", re.IGNORECASE)
 
 
 

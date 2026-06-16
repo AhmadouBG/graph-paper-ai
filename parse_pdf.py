@@ -18,6 +18,7 @@ def main():
     parser.add_argument("output_dir", type=str, nargs="?", default="output", help="Output directory (default: output/)")
     parser.add_argument("--marker", action="store_true", help="Use Marker for higher-quality conversion (may download models)")
     parser.add_argument("--marker-timeout", type=int, default=120, help="Timeout in seconds for Marker conversion (default: 120)")
+    parser.add_argument("--llamaparse", action="store_true", help="Use LlamaParse for high-quality structured items parsing")
     args = parser.parse_args()
 
     pdf_path = Path(args.pdf_path)
@@ -27,7 +28,7 @@ def main():
         print(f"Error: File '{pdf_path}' does not exist.")
         return
 
-    method = "Marker" if args.marker else "PyMuPDF"
+    method = "LlamaParse" if args.llamaparse else ("Marker" if args.marker else "PyMuPDF")
     print(f"Parsing PDF: {pdf_path} (method: {method}) ...")
     if args.marker:
         print("(Marker model download may take several minutes on first run)")
@@ -37,6 +38,7 @@ def main():
             output_dir=output_dir,
             use_marker=args.marker,
             marker_timeout=args.marker_timeout,
+            use_llamaparse=args.llamaparse,
         )
 
         print("\n=== METADATA ===")

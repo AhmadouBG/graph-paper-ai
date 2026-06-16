@@ -96,10 +96,103 @@ def _find_caption_for_image(markdown: str, img) -> Optional[str]:
     return caption[:300]
 
 
+def _build_graph_from_llamaparse_tree(tree_nodes: List[Dict]) -> nx.DiGraph:
+    graph = nx.DiGraph()
+    def _add(parent, nodes):
+        for node in nodes:
+            nid = "tree_" + node["node_id"]
+            sidx = int(node["node_id"])
+            graph.add_node(nid, node_type="section", title=node["title"],
+                content=node.get("summary", ""), page=node.get("page_index", 1), _section_idx=sidx)
+            if parent:
+                graph.add_edge(parent, nid, edge_type="contains")
+            for v in node.get("visuals", []):
+                vid = v.get("image_id", "fig_" + nid)
+                graph.add_node(vid, node_type="figure", title=v.get("image_id", ""),
+                    content=v.get("path", ""), page=v.get("page", node.get("page_index", 1)))
+                graph.add_edge(nid, vid, edge_type="contains")
+            for ti, t in enumerate(node.get("tables", [])):
+                tid = "tbl_" + node["node_id"] + "_" + str(ti)
+                graph.add_node(tid, node_type="text_block", title="",
+                    content=t.get("markdown_content", ""), page=t.get("page", node.get("page_index", 1)))
+                graph.add_edge(nid, tid, edge_type="contains")
+            _add(nid, node.get("nodes", []))
+    _add(None, tree_nodes)
+    return graph
+
+
 def build_adjacency_map(
     parsed: ProcessingResult,
     refs: Optional[List[CrossReference]] = None,
 ) -> nx.DiGraph:
+    if parsed.metadata.get("parser") == "llamaparse" and "llamaparse_tree" in parsed.metadata:
+        graph = _build_graph_from_llamaparse_tree(parsed.metadata["llamaparse_tree"])
+
+        for n, attr in list(graph.nodes(data=True)):
+            if attr.get("node_type") == "section":
+                content = attr.get("content", "")
+                formulas = _find_formulas(content)
+                for f in formulas:
+                    graph.add_node(
+                        f["node_id"],
+                        node_type="formula",
+                        content=f["content"],
+                        page=attr.get("page"),
+                        bbox=None,
+                    )
+                    graph.add_edge(n, f["node_id"], edge_type="formula")
+
+        if refs:
+            for ref in refs:
+                target_id = ref.target_node_id
+                if not graph.has_node(target_id):
+                    graph.add_node(
+                        target_id,
+                        node_type="figure",
+                        content="",
+                        page=ref.page,
+                        bbox=None,
+                    )
+                ref_node_id = f"ref_{target_id}_{abs(hash(ref.context)) % 10000}"
+                graph.add_node(
+                    ref_node_id,
+                    node_type="text_block",
+                    content=ref.context,
+                    page=ref.page,
+                    bbox=None,
+                )
+                graph.add_edge(ref_node_id, target_id, edge_type="references")
+
+                containing_sec_id = None
+                for n, attr in graph.nodes(data=True):
+                    if attr.get("node_type") == "section":
+                        if ref.context[:50] in attr.get("content", ""):
+                            containing_sec_id = n
+                            break
+                if containing_sec_id:
+                    graph.add_edge(containing_sec_id, ref_node_id, edge_type="contains")
+
+        for edge in parsed.edges:
+            if not graph.has_node(edge.source_id):
+                graph.add_node(
+                    edge.source_id,
+                    node_type="figure",
+                    content="",
+                    page=edge.page,
+                    bbox=None,
+                )
+            if not graph.has_node(edge.target_id):
+                graph.add_node(
+                    edge.target_id,
+                    node_type="text_block",
+                    content="",
+                    page=edge.page,
+                    bbox=None,
+                )
+            graph.add_edge(edge.source_id, edge.target_id, edge_type=edge.edge_type)
+
+        return graph
+
     graph = nx.DiGraph()
     used_section_ids: set[str] = set()
 
