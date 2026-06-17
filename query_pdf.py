@@ -3,8 +3,8 @@ import logging
 import sys
 from pathlib import Path
 
-from src.ingestion.graph import _parse_sections
-from src.ingestion.parser import parse_paper
+from src.extraction.graph import _parse_sections
+from src.extraction.parser import parse_paper
 from src.llm.ollama_client import OllamaClient
 from src.pipeline import vectorless_rag
 
@@ -54,7 +54,7 @@ def _build_tree_from_markdown(markdown: str) -> list[dict]:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Parse a PDF and answer questions using vectorless Graph-RAG"
+        description="Parse a PDF and answer questions using vectorless RAG"
     )
     parser.add_argument("pdf_path", type=str, help="Path to the PDF file")
     parser.add_argument("--model", type=str, default="qwen2.5vl:3b",
