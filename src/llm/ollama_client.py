@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -20,16 +22,39 @@ class OllamaClient:
 
     def chat(
         self,
-        messages: List[OllamaMessage],
+        messages: List[Dict[str, str]] | List[OllamaMessage],
         model: Optional[str] = None,
         temperature: float = 0.0,
+        images: Optional[List[str]] = None,
+        format: Optional[str] = None,
     ) -> str:
+        ollama_messages: List[Dict[str, Any]] = []
+        for i, msg in enumerate(messages):
+            if isinstance(msg, OllamaMessage):
+                entry: Dict[str, Any] = {"role": msg.role, "content": msg.content}
+            else:
+                entry = {"role": msg["role"], "content": msg["content"]}
+
+            if images and i == len(messages) - 1 and entry["role"] == "user":
+                encoded_images = []
+                for img_path in images:
+                    p = Path(img_path)
+                    if p.exists():
+                        encoded_images.append(base64.b64encode(p.read_bytes()).decode("utf-8"))
+                if encoded_images:
+                    entry["images"] = encoded_images
+
+            ollama_messages.append(entry)
+
         payload: Dict[str, Any] = {
             "model": model or self.model,
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "messages": ollama_messages,
             "temperature": temperature,
             "stream": False,
         }
+        if format:
+            payload["format"] = format
+
         resp = self._client.post(f"{self.base_url}/api/chat", json=payload)
         resp.raise_for_status()
         data = resp.json()

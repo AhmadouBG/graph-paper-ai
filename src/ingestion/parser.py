@@ -184,6 +184,7 @@ def _add_text_to_last_node(stack, text):
         last_node["summary"] += " " + clean_text
     else:
         last_node["summary"] = clean_text
+    last_node["text"] = last_node["summary"]
 
 
 def _build_complete_hierarchical_tree(raw_result) -> List[dict]:
@@ -217,6 +218,7 @@ def _build_complete_hierarchical_tree(raw_result) -> List[dict]:
                     "title": current_heading,
                     "page_index": page_num,
                     "summary": "",
+                    "text": "",
                     "visuals": [],
                     "tables": [],
                     "nodes": [],
@@ -401,3 +403,35 @@ def parse_paper(
             "image_count": len(images),
         },
     )
+
+
+
+def _parse_sections(markdown: str) -> List[Dict]:
+    sections: List[Dict] = []
+    heading_spans = [
+        (m.start(), m.end(), len(m.group(1)), m.group(2).strip())
+        for m in HEADING_RE.finditer(markdown)
+    ]
+    heading_spans.sort(key=lambda x: x[0])
+
+    for i, (start, end, level, title) in enumerate(heading_spans):
+        next_start = heading_spans[i + 1][0] if i + 1 < len(heading_spans) else len(markdown)
+        content = markdown[end:next_start].strip()
+        sections.append({
+            "level": level,
+            "title": title,
+            "content": content,
+            "start": start,
+            "end": next_start,
+        })
+
+    if not sections:
+        sections.append({
+            "level": 1,
+            "title": "Document",
+            "content": markdown.strip(),
+            "start": 0,
+            "end": len(markdown),
+        })
+
+    return sections
