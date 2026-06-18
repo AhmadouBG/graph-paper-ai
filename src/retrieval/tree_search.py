@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from src.llm.ollama_client import OllamaClient
+import ollama
 
 
 def compress_tree(tree: list[dict]) -> list[dict]:
@@ -13,7 +13,7 @@ def compress_tree(tree: list[dict]) -> list[dict]:
             "node_id": n["node_id"],
             "title": n["title"],
             "page": n.get("page_index", "?"),
-            "summary": (n.get("text") or n.get("summary", ""))[:1000],
+            "summary": (n.get("text") or n.get("summary", ""))[:2000],
         }
         visuals = n.get("visuals")
         if visuals:
@@ -33,25 +33,33 @@ def compress_tree(tree: list[dict]) -> list[dict]:
     return out
 
 
-def llm_tree_search(query: str, tree: list[dict], llm: OllamaClient) -> dict:
-    compressed = compress_tree(tree)
+def llm_tree_search_ollama(query: str, tree: list[dict], model: str) -> dict:
+    compressed_tree = compress_tree(tree)
     prompt = (
-        "You are given a query and a document's tree structure (like a Table of Contents).\n"
-        "Your task: identify which node IDs most likely contain the answer to the query.\n"
-        "Think step-by-step about which sections are relevant.\n\n"
-        f"Query: {query}\n\n"
-        f"Document Tree:\n{json.dumps(compressed, indent=2, ensure_ascii=False)}\n\n"
-        "Reply ONLY in this exact JSON format:\n"
-        '{\n'
-        '  "thinking": "<your step-by-step reasoning>",\n'
-        '  "node_list": ["node_id1", "node_id2"]\n'
-        '}'
+        f"""You are given a query and a document's tree structure (like a Table of Contents).
+Your task: identify which node IDs most likely contain the answer to the query.
+Think step-by-step about which sections are relevant.
+
+Query: {query}
+
+Document Tree:
+{json.dumps(compressed_tree, indent=2, ensure_ascii=False)}
+
+Reply ONLY in this exact JSON format:
+{{
+  "thinking": "<your step-by-step reasoning>",
+  "node_list": ["node_id1", "node_id2"]
+}}"""
     )
-    response = llm.chat(
+    response = ollama.chat(
+        model=model,
         messages=[{"role": "user", "content": prompt}],
         format="json",
     )
+    content = response["message"]["content"]
     try:
-        return json.loads(response)
-    except (json.JSONDecodeError, TypeError):
-        return {"thinking": "Failed to parse JSON", "node_list": []}
+        parsed = json.loads(content)
+        node_list = parsed.get("node_list", [])
+    except json.JSONDecodeError:
+        node_list = [n.strip() for n in content.replace("\n", ",").split(",") if n.strip()]
+    return {"node_list": node_list, "raw_response": content}

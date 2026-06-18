@@ -1,11 +1,13 @@
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
-from src.extraction.graph import _parse_sections
+import ollama
+
 from src.extraction.parser import parse_paper
-from src.llm.ollama_client import OllamaClient
 from src.pipeline import vectorless_rag
 
 logging.basicConfig(
@@ -15,61 +17,23 @@ logging.basicConfig(
 )
 
 
-def _build_tree_from_markdown(markdown: str) -> list[dict]:
-    sections = _parse_sections(markdown)
-    if not sections:
-        return [{
-            "node_id": "0000",
-            "title": "Document",
-            "page_index": 1,
-            "summary": markdown.strip(),
-            "text": markdown.strip(),
-            "visuals": [],
-            "tables": [],
-            "nodes": [],
-        }]
-    root: dict = {
-        "node_id": "0000",
-        "title": "Document",
-        "page_index": 1,
-        "summary": "",
-        "text": "",
-        "visuals": [],
-        "tables": [],
-        "nodes": [],
-    }
-    for i, sec in enumerate(sections):
-        root["nodes"].append({
-            "node_id": f"{i + 1:04d}",
-            "title": sec["title"],
-            "page_index": 1,
-            "summary": sec["content"][:2000],
-            "text": sec["content"][:2000],
-            "visuals": [],
-            "tables": [],
-            "nodes": [],
-        })
-    return [root]
+def _url_to_host(url: str) -> str:
+    parsed = urlparse(url)
+    return f"{parsed.hostname}:{parsed.port}" if parsed.port else parsed.hostname
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Parse a PDF and answer questions using vectorless RAG"
+        description="Parse a PDF with LlamaParse and answer questions using vectorless Graph-RAG"
     )
     parser.add_argument("pdf_path", type=str, help="Path to the PDF file")
     parser.add_argument("--model", type=str, default="qwen2.5vl:3b",
                         help="Ollama model (default: qwen2.5vl:3b)")
     parser.add_argument("--ollama-url", type=str, default="http://localhost:11434",
                         help="Ollama server URL (default: http://localhost:11434)")
-    parser.add_argument("--llamaparse", action="store_true",
-                        help="Use LlamaParse for structured parsing (recommended)")
-    parser.add_argument("--marker", action="store_true",
-                        help="Use Marker parser")
-    parser.add_argument("--marker-timeout", type=int, default=120,
-                        help="Timeout in seconds for Marker (default: 120)")
 
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--query", "-q", type=str, help="Single query to answer")
+    group.add_argument("--query", "-q", type=str, help="Single question to answer")
     group.add_argument("--interactive", "-i", action="store_true",
                        help="Interactive Q&A session")
 
@@ -80,46 +44,32 @@ def main():
         print(f"Error: File '{pdf_path}' does not exist.")
         sys.exit(1)
 
-    # ── Parse PDF ──────────────────────────────────────────────
-    method = "LlamaParse" if args.llamaparse else ("Marker" if args.marker else "PyMuPDF")
-    print(f"Parsing PDF: {pdf_path} (method: {method}) ...")
-    if args.marker:
-        print("  (Marker model download may take several minutes on first run)")
+    os.environ["OLLAMA_HOST"] = _url_to_host(args.ollama_url)
 
-    result = parse_paper(
-        pdf_path,
-        use_llamaparse=args.llamaparse,
-        use_marker=args.marker,
-        marker_timeout=args.marker_timeout,
-    )
+    # ── Parse PDF with LlamaParse ──────────────────────────────
+    print(f"Parsing: {pdf_path} with LlamaParse ...")
+    result = parse_paper(pdf_path)
+    tree = result["metadata"]["llamaparse_tree"]
+    print(f"  Pages: {result['metadata'].get('page_count', '?')}")
+    print(f"  Tree: {len(tree)} root nodes")
 
-    # ── Build tree ─────────────────────────────────────────────
-    tree = result.metadata.get("llamaparse_tree")
-    if tree:
-        print(f"  LlamaParse tree: {len(tree)} root nodes")
-    else:
-        print("  Building section tree from markdown...")
-        tree = _build_tree_from_markdown(result.markdown)
-
-    print(f"  Pages: {result.metadata.get('page_count', '?')}")
-    print(f"  Images: {result.metadata.get('image_count', 0)}")
-
-    # ── Connect to Ollama ──────────────────────────────────────
-    llm = OllamaClient(base_url=args.ollama_url, model=args.model)
-    if not llm.is_available():
-        print(f"\nError: Ollama is not available at {args.ollama_url}")
+    # ── Check Ollama availability ─────────────────────────────
+    try:
+        ollama.list()
+    except Exception:
+        print(f"\nError: Ollama not available at {args.ollama_url}")
         print("  Start the server:  ollama serve")
         print(f"  Then pull the model:  ollama pull {args.model}")
         sys.exit(1)
-    print(f"  Ollama: connected ({args.model})")
+    print(f"  Ollama: {args.model} connected")
 
     # ── Answer ─────────────────────────────────────────────────
     if args.query:
         print(f"\nQuery: {args.query}\n")
-        vectorless_rag(args.query, tree, llm)
+        vectorless_rag(args.query, tree, args.model)
 
-    elif args.interactive or not args.query:
-        print("\nInteractive mode. Type your questions (Ctrl+C to quit).\n")
+    else:
+        print("\nInteractive mode. Type questions (Ctrl+C to quit).\n")
         try:
             while True:
                 try:
@@ -132,12 +82,10 @@ def main():
                 if q.lower() in ("exit", "quit", "/q"):
                     break
                 print()
-                vectorless_rag(q, tree, llm)
+                vectorless_rag(q, tree, args.model)
                 print()
         except KeyboardInterrupt:
             print()
-
-    llm.close()
 
 
 if __name__ == "__main__":
