@@ -28,7 +28,7 @@ async def _parse_with_llamaparse(pdf_path: Path, api_key: str):
     )
     return result
 
-async def get_images_as_base64_map(raw_result, api_key: str) -> dict[int, list[str]]:
+async def _get_images_as_base64_map(raw_result, api_key: str) -> dict[int, list[str]]:
     """Fetches images from LlamaCloud and converts them straight to Base64 strings in RAM."""
     from llama_cloud import AsyncLlamaCloud
     import base64
@@ -64,7 +64,7 @@ async def get_images_as_base64_map(raw_result, api_key: str) -> dict[int, list[s
     return page_image_map
 
 
-def build_pure_text_tree(markdown_text: str, page_image_map: dict[int, list[str]]) -> list[dict]:
+def _build_pure_text_tree(markdown_text: str, page_image_map: dict[int, list[str]]) -> list[dict]:
     text_with_page_tags = re.sub(r'---\s*Page\s*(\d+)\s*---', r'[[PAGE_\1]]', markdown_text)
     lines = text_with_page_tags.split("\n")
     

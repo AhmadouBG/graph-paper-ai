@@ -11,7 +11,7 @@ import ollama
 # Importation de vos fonctions personnalisées
 from src.pipeline import vectorless_rag_no_loss
 # Assurez-vous d'importer vos deux nouvelles fonctions depuis votre dossier source
-from src.extraction.parser import _parse_with_llamaparse, _build_pure_text_tree 
+from src.extraction.parser import _parse_with_llamaparse, _build_pure_text_tree, _get_images_as_base64_map
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -24,6 +24,42 @@ def _url_to_host(url: str) -> str:
     parsed = urlparse(url)
     return f"{parsed.hostname}:{parsed.port}" if parsed.port else parsed.hostname
 
+async def run_pipeline_orchestration(pdf_path: Path, api_key: str) -> list[dict]:
+    """
+    Fonction orchestratrice asynchrone pour chaîner LlamaParse, 
+    l'extraction d'images en RAM et la construction de l'arbre.
+    """
+    print(f"Parsing: {pdf_path} with LlamaParse (Agentic Tier)...")
+    raw_result = await _parse_with_llamaparse(pdf_path, api_key)
+    
+    # 1. Extraction du Markdown textuel
+    markdown_content = getattr(raw_result, "markdown", "")
+    if not markdown_content and isinstance(raw_result, dict):
+        markdown_content = raw_result.get("markdown", "")
+        
+    # Reconstitution de secours si .markdown n'est pas fourni directement
+    if not markdown_content and hasattr(raw_result, "items"):
+        pages_md = []
+        for idx, page in enumerate(getattr(raw_result.items, "pages", [])):
+            pages_md.append(f"--- Page {idx + 1} ---")
+            for item in getattr(page, "items", []):
+                if hasattr(item, "md") and item.md:
+                    pages_md.append(item.md)
+                elif hasattr(item, "value") and item.value:
+                    pages_md.append(item.value)
+        markdown_content = "\n".join(pages_md)
+
+    if not markdown_content:
+        print("Error: Could not extract markdown text from LlamaParse response.")
+        sys.exit(1)
+
+    # 2. Chaînage propre : Extraction des images directement en Base64 dans la RAM
+    print("🖼️ Fetching document images and converting to Base64 in RAM...")
+    page_image_map = await _get_images_as_base64_map(raw_result, api_key)
+    
+    # 3. Construction de l'arbre final combinant Texte + Images Base64
+    tree = _build_pure_text_tree(markdown_content, page_image_map)
+    return tree
 
 def main():
     parser = argparse.ArgumentParser(
@@ -47,8 +83,7 @@ def main():
         print(f"Error: File '{pdf_path}' does not exist.")
         sys.exit(1)
 
-    # Récupération de la clé API LlamaCloud depuis l'environnement
-    api_key = os.environ.get("LLAMACLOUD_API_KEY")
+    api_key = os.environ.get("LLAMA_CLOUD_API_KEY")
     if not api_key:
         print("Error: LLAMA_CLOUD_API_KEY environment variable is not set.")
         sys.exit(1)
@@ -65,44 +100,20 @@ def main():
         sys.exit(1)
     print(f"  Ollama: {args.model} connected")
 
-    # ── Parse PDF with LlamaParse & Build Tree ──────────────────
-    print(f"Parsing: {pdf_path} with LlamaParse (Agentic Tier)...")
-    
-    # Exécution synchrone de la fonction asynchrone _parse_with_llamaparse
-    raw_result = asyncio.run(_parse_with_llamaparse(pdf_path, api_key))
-    
-    # Extraction du texte brut au format Markdown (généralement dans result.markdown ou obtenu via l'API)
-    # Note : Si votre instance renvoie directement l'objet de parsing LlamaCloud,
-    # vérifiez la façon dont vous accédez au texte brut (ex: raw_result.markdown ou via get_text_by_page())
-    markdown_content = getattr(raw_result, "markdown", "")
-    if not markdown_content and isinstance(raw_result, dict):
-        markdown_content = raw_result.get("markdown", "")
-        
-    # Si LlamaCloud renvoie un objet complexe d'items textuels sans chaîne brute globale, 
-    # vous pouvez reconstruire la chaîne Markdown en joignant les pages :
-    if not markdown_content and hasattr(raw_result, "items"):
-        pages_md = []
-        for idx, page in enumerate(getattr(raw_result.items, "pages", [])):
-            pages_md.append(f"--- Page {idx + 1} ---")
-            for item in getattr(page, "items", []):
-                if hasattr(item, "md") and item.md:
-                    pages_md.append(item.md)
-                elif hasattr(item, "value") and item.value:
-                    pages_md.append(item.value)
-        markdown_content = "\n".join(pages_md)
-
-    if not markdown_content:
-        print("Error: Could not extract markdown text from LlamaParse response.")
-        sys.exit(1)
-
-    # Génération de l'arbre textuel navigable sans perte
-    tree = _build_pure_text_tree(markdown_content)
-    print(f"  Tree successfully built: {len(tree)} root sections identified.")
+    # ── Orchestration Loop (Async to Sync) ─────────────────────
+    # On exécute la fonction de chaînage asynchrone de manière sécurisée
+    tree = asyncio.run(run_pipeline_orchestration(pdf_path, api_key))
+    print(f"  Tree successfully built: {len(tree)} root sections identified with embedded visuals.")
 
     # ── Answer ─────────────────────────────────────────────────
     if args.query:
         print(f"\nQuery: {args.query}\n")
-        answer = vectorless_rag_no_loss(args.query, tree, args.model)
+        result_data = vectorless_rag_no_loss(args.query, tree, args.model)
+        
+        print(f"📝 Answer:\n{result_data['answer']}\n")
+        print("📍 Sources used:")
+        for citation in result_data["sources"]:
+            print(f"👉 {citation}")
 
     else:
         print("\nInteractive mode. Type questions (Ctrl+C to quit).\n")
@@ -117,9 +128,13 @@ def main():
                     continue
                 if q.lower() in ("exit", "quit", "/q"):
                     break
-                print()
-                answer = vectorless_rag_no_loss(q, tree, args.model)
-                print(f"📝 Answer:\n{answer}")
+                
+                result_data = vectorless_rag_no_loss(q, tree, args.model)
+                
+                print(f"📝 Answer:\n{result_data['answer']}\n")
+                print("📍 Sources used:")
+                for citation in result_data["sources"]:
+                    print(f"👉 {citation}")
                 print()
         except KeyboardInterrupt:
             print()
