@@ -28,6 +28,41 @@ async def _parse_with_llamaparse(pdf_path: Path, api_key: str):
     )
     return result
 
+async def get_images_as_base64_map(raw_result, api_key: str) -> dict[int, list[str]]:
+    """Fetches images from LlamaCloud and converts them straight to Base64 strings in RAM."""
+    from llama_cloud import AsyncLlamaCloud
+    import base64
+    
+    client = AsyncLlamaCloud(api_key=api_key)
+    page_image_map = {}
+    
+    pages = getattr(raw_result.items, "pages", []) if hasattr(raw_result, "items") else []
+    
+    for idx, page in enumerate(pages):
+        page_num = idx + 1
+        page_image_map[page_num] = []
+        
+        for item in getattr(page, "items", []):
+            if getattr(item, "type", "") == "image":
+                image_id = getattr(item, "id", None) or getattr(item, "name", None)
+                if not image_id:
+                    continue
+                
+                try:
+                    # 1. Fetch image bytes into RAM
+                    image_bytes = await client.parsing.get_image(
+                        file_id=raw_result.id, 
+                        image_id=image_id
+                    )
+                    # 2. Encode to Base64 string directly
+                    base64_str = base64.b64encode(image_bytes).decode('utf-8')
+                    page_image_map[page_num].append(base64_str)
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to fetch image {image_id} on page {page_num}: {e}")
+                    
+    return page_image_map
+
 
 def _build_pure_text_tree(markdown_text: str) -> list[dict]:
     # Normalisation des marqueurs de page de LlamaParse
