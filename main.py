@@ -83,9 +83,9 @@ def main():
         print(f"Error: File '{pdf_path}' does not exist.")
         sys.exit(1)
 
-    api_key = os.environ.get("LLAMA_CLOUD_API_KEY")
+    api_key = os.environ.get("LLAMACLOUD_API_KEY")
     if not api_key:
-        print("Error: LLAMA_CLOUD_API_KEY environment variable is not set.")
+        print("Error: LLAMACLOUD_API_KEY environment variable is not set.")
         sys.exit(1)
 
     os.environ["OLLAMA_HOST"] = _url_to_host(args.ollama_url)

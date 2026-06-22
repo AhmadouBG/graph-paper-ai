@@ -164,4 +164,4 @@ Context:
     for citation in source_citations:
         print(f"👉 {citation}")
         
-    
+    return {"answer": answer, "sources": source_citations}

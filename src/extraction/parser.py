@@ -1,22 +1,18 @@
 from __future__ import annotations
 
-import asyncio
-import json
+
 import logging
-import os
 from pathlib import Path
-from typing import Any
 import re
 from dotenv import load_dotenv
-
-from src.exceptions import IngestionError
+from llama_cloud import AsyncLlamaCloud
+import base64
 
 logger = logging.getLogger(__name__)
 load_dotenv()
 
 
 async def _parse_with_llamaparse(pdf_path: Path, api_key: str):
-    from llama_cloud import AsyncLlamaCloud
 
     client = AsyncLlamaCloud(api_key=api_key)
     file_obj = await client.files.create(file=pdf_path, purpose="parse")
@@ -30,8 +26,6 @@ async def _parse_with_llamaparse(pdf_path: Path, api_key: str):
 
 async def _get_images_as_base64_map(raw_result, api_key: str) -> dict[int, list[str]]:
     """Fetches images from LlamaCloud and converts them straight to Base64 strings in RAM."""
-    from llama_cloud import AsyncLlamaCloud
-    import base64
     
     client = AsyncLlamaCloud(api_key=api_key)
     page_image_map = {}
