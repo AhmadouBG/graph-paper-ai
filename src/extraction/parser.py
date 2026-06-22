@@ -64,8 +64,7 @@ async def get_images_as_base64_map(raw_result, api_key: str) -> dict[int, list[s
     return page_image_map
 
 
-def _build_pure_text_tree(markdown_text: str) -> list[dict]:
-    # Normalisation des marqueurs de page de LlamaParse
+def build_pure_text_tree(markdown_text: str, page_image_map: dict[int, list[str]]) -> list[dict]:
     text_with_page_tags = re.sub(r'---\s*Page\s*(\d+)\s*---', r'[[PAGE_\1]]', markdown_text)
     lines = text_with_page_tags.split("\n")
     
@@ -74,13 +73,13 @@ def _build_pure_text_tree(markdown_text: str) -> list[dict]:
     current_page = 1
     node_counter = 0
     
-    # Nœud racine par défaut pour l'en-tête du document
     intro_node = {
         "node_id": f"{node_counter:04d}",
         "title": "Document Header / Introduction",
         "page_start": 1,
         "page_end": 1,
         "content_lines": [],
+        "base64_images": page_image_map.get(1, []), # ✨ In-memory Base64 strings
         "nodes": []
     }
     node_counter += 1
@@ -106,6 +105,7 @@ def _build_pure_text_tree(markdown_text: str) -> list[dict]:
                 "page_start": current_page,
                 "page_end": current_page,
                 "content_lines": [],
+                "base64_images": page_image_map.get(current_page, []), # ✨ In-memory Base64 strings
                 "nodes": []
             }
             node_counter += 1
@@ -122,6 +122,21 @@ def _build_pure_text_tree(markdown_text: str) -> list[dict]:
         else:
             if stack and line.strip():
                 stack[-1]["node"]["content_lines"].append(line)
+
+    def finalize_tree(nodes, next_start=None):
+        for i, n in enumerate(nodes):
+            n["content"] = "\n".join(n["content_lines"])
+            del n["content_lines"]
+            if i + 1 < len(nodes):
+                n["page_end"] = max(n["page_start"], nodes[i+1]["page_start"])
+            elif next_start:
+                n["page_end"] = max(n["page_start"], next_start)
+            if n["nodes"]:
+                finalize_tree(n["nodes"], n["page_end"])
+                
+    finalize_tree(root_nodes)
+    return root_nodes
+
  
 
 
