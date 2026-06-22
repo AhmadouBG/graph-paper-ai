@@ -12,40 +12,65 @@ def print_tree(nodes, indent=0):
         if node.get("nodes"):
             print_tree(node["nodes"], indent + 1)
 
-def _compute_simple_score(query: str, text: str) -> float:
-    """Calcule un score rapide basé sur la fréquence des mots-clés (0 ms sur CPU)."""
-    """Fast keyword matching score (0 ms on CPU)."""
-    words = re.findall(r'\w+', query.lower())
-    text_lower = text.lower()
-    score = 0.0
-    
-    stop_words = [
-        "is", "the", "of", "and", "in", "to", "what", "about", "for", "on", 
-        "with", "as", "at", "by", "an", "be", "this", "that", "from", "are", 
-        "it", "you", "your", "how", "why", "which", "where", "who", "can", "do"
-    ]
-    
-    for word in words:
-        if word in stop_words:
-            continue
-        score += text_lower.count(word) * 2.0  
-    
-    # 2. Analyse par paires de mots (Bi-grams)
-    # On crée des paires de mots consécutifs à partir de la question
-    # Exemple: "what is", "is linear", "linear regression"
-    for i in range(len(words) - 1):
-        # On ignore les paires composées uniquement de stop-words (ex: "what is")
-        if words[i] in stop_words and words[i+1] in stop_words:
-            continue
-            
-        phrase = f"{words[i]} {words[i+1]}"
-        phrase_count = text_lower.count(phrase)
-        
-        # If the exact expression is found, add 5 points per occurrence
-        if phrase_count > 0:
-            score += phrase_count * 5.0
+def llm_tree_search_ollama(query: str, tree: list[dict], model: str) -> list[str]:
+    """
+    Utilise Ollama pour analyser la structure de l'arbre et sélectionner les meilleurs IDs.
+    Optimisé pour CPU (Zéro texte brut envoyé, uniquement titres + métadonnées).
+    """
+    # 1. Aplatir et compresser l'arbre au strict minimum pour économiser la RAM/CPU
+    def compress_and_flatten(nodes):
+        flat_list = []
+        for n in nodes:
+            has_visuals = "Yes" if n.get("base64_images") else "No"
+            flat_list.append({
+                "node_id": n["node_id"],
+                "title": n["title"],
+                "pages": f"{n.get('page_start', '?')}-{n.get('page_end', '?')}",
+                "contains_images_or_figures": has_visuals
+            })
+            if n.get("nodes"):
+                flat_list.extend(compress_and_flatten(n["nodes"]))
+        return flat_list
 
-    return score
+    compressed_tree = compress_and_flatten(tree)
+
+    # 2. Prompt ultra-direct forçant le modèle à cibler les figures si demandées
+    prompt = f"""You are a document navigation assistant. Analyze the user query and the document structure.
+Select up to 2 Node IDs that are the most relevant to answer the query.
+
+CRITICAL RULE: If the query asks for a specific Figure (e.g., 'fig 4' or 'figure 4'), prioritize sections where 'contains_images_or_figures' is 'Yes' and matches the logical flow.
+
+Query: {query}
+
+Document Structure:
+{json.dumps(compressed_tree, indent=2)}
+
+Reply ONLY in this exact JSON format:
+{{
+  "thinking": "<short reasoning>",
+  "node_list": ["node_id1", "node_id2"]
+}}"""
+
+    try:
+        # Premier appel LLM (léger car le prompt est très court)
+        response = ollama.chat(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            format="json",
+            options={"num_ctx": 4096}
+        )
+        content = response["message"]["content"]
+        result = json.loads(content)
+        
+        # Affichage du raisonnement du LLM dans la console
+        print("\n" + "="*60)
+        print(f"🧠 LLM Tree Search Reasoning: {result.get('thinking', 'N/A')}")
+        return result.get("node_list", [])
+        
+    except Exception as e:
+        print(f"⚠️ Ollama Tree Search Error: {e}. Fallback to first nodes.")
+        # Sécurité CPU : si Ollama échoue ou coupe, on renvoie le premier ID valide
+        return [compressed_tree[0]["node_id"]] if compressed_tree else []
 
 def vectorless_rag_no_loss(query: str, tree: list[dict], model: str) -> str:
     # 1. Affichage de l'arbre complet (Pretty-print) au début de la question
