@@ -1,4 +1,5 @@
 import argparse
+import asyncio  # ✨ Requis pour exécuter votre fonction asynchrone
 import logging
 import os
 import sys
@@ -7,8 +8,10 @@ from urllib.parse import urlparse
 
 import ollama
 
-from src.extraction.parser import parse_paper
-from src.pipeline import vectorless_rag
+# Importation de vos fonctions personnalisées
+from src.pipeline import vectorless_rag_no_loss
+# Assurez-vous d'importer vos deux nouvelles fonctions depuis votre dossier source
+from src.extraction.parser import _parse_with_llamaparse, _build_pure_text_tree 
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -44,14 +47,13 @@ def main():
         print(f"Error: File '{pdf_path}' does not exist.")
         sys.exit(1)
 
-    os.environ["OLLAMA_HOST"] = _url_to_host(args.ollama_url)
+    # Récupération de la clé API LlamaCloud depuis l'environnement
+    api_key = os.environ.get("LLAMACLOUD_API_KEY")
+    if not api_key:
+        print("Error: LLAMA_CLOUD_API_KEY environment variable is not set.")
+        sys.exit(1)
 
-    # ── Parse PDF with LlamaParse ──────────────────────────────
-    print(f"Parsing: {pdf_path} with LlamaParse ...")
-    result = parse_paper(pdf_path)
-    tree = result["metadata"]["llamaparse_tree"]
-    print(f"  Pages: {result['metadata'].get('page_count', '?')}")
-    print(f"  Tree: {len(tree)} root nodes")
+    os.environ["OLLAMA_HOST"] = _url_to_host(args.ollama_url)
 
     # ── Check Ollama availability ─────────────────────────────
     try:
@@ -63,10 +65,44 @@ def main():
         sys.exit(1)
     print(f"  Ollama: {args.model} connected")
 
+    # ── Parse PDF with LlamaParse & Build Tree ──────────────────
+    print(f"Parsing: {pdf_path} with LlamaParse (Agentic Tier)...")
+    
+    # Exécution synchrone de la fonction asynchrone _parse_with_llamaparse
+    raw_result = asyncio.run(_parse_with_llamaparse(pdf_path, api_key))
+    
+    # Extraction du texte brut au format Markdown (généralement dans result.markdown ou obtenu via l'API)
+    # Note : Si votre instance renvoie directement l'objet de parsing LlamaCloud,
+    # vérifiez la façon dont vous accédez au texte brut (ex: raw_result.markdown ou via get_text_by_page())
+    markdown_content = getattr(raw_result, "markdown", "")
+    if not markdown_content and isinstance(raw_result, dict):
+        markdown_content = raw_result.get("markdown", "")
+        
+    # Si LlamaCloud renvoie un objet complexe d'items textuels sans chaîne brute globale, 
+    # vous pouvez reconstruire la chaîne Markdown en joignant les pages :
+    if not markdown_content and hasattr(raw_result, "items"):
+        pages_md = []
+        for idx, page in enumerate(getattr(raw_result.items, "pages", [])):
+            pages_md.append(f"--- Page {idx + 1} ---")
+            for item in getattr(page, "items", []):
+                if hasattr(item, "md") and item.md:
+                    pages_md.append(item.md)
+                elif hasattr(item, "value") and item.value:
+                    pages_md.append(item.value)
+        markdown_content = "\n".join(pages_md)
+
+    if not markdown_content:
+        print("Error: Could not extract markdown text from LlamaParse response.")
+        sys.exit(1)
+
+    # Génération de l'arbre textuel navigable sans perte
+    tree = _build_pure_text_tree(markdown_content)
+    print(f"  Tree successfully built: {len(tree)} root sections identified.")
+
     # ── Answer ─────────────────────────────────────────────────
     if args.query:
         print(f"\nQuery: {args.query}\n")
-        vectorless_rag(args.query, tree, args.model)
+        answer = vectorless_rag_no_loss(args.query, tree, args.model)
 
     else:
         print("\nInteractive mode. Type questions (Ctrl+C to quit).\n")
@@ -82,7 +118,8 @@ def main():
                 if q.lower() in ("exit", "quit", "/q"):
                     break
                 print()
-                vectorless_rag(q, tree, args.model)
+                answer = vectorless_rag_no_loss(q, tree, args.model)
+                print(f"📝 Answer:\n{answer}")
                 print()
         except KeyboardInterrupt:
             print()
