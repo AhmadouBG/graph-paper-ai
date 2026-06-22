@@ -29,6 +29,22 @@ def _compute_simple_score(query: str, text: str) -> float:
         if word in stop_words:
             continue
         score += text_lower.count(word) * 2.0  
+    
+    # 2. Analyse par paires de mots (Bi-grams)
+    # On crée des paires de mots consécutifs à partir de la question
+    # Exemple: "what is", "is linear", "linear regression"
+    for i in range(len(words) - 1):
+        # On ignore les paires composées uniquement de stop-words (ex: "what is")
+        if words[i] in stop_words and words[i+1] in stop_words:
+            continue
+            
+        phrase = f"{words[i]} {words[i+1]}"
+        phrase_count = text_lower.count(phrase)
+        
+        # If the exact expression is found, add 5 points per occurrence
+        if phrase_count > 0:
+            score += phrase_count * 5.0
+
     return score
 
 def vectorless_rag_no_loss(query: str, tree: list[dict], model: str) -> str:
@@ -42,7 +58,7 @@ def vectorless_rag_no_loss(query: str, tree: list[dict], model: str) -> str:
     print_tree(tree)
     print("\n" + "="*60)
 
-    # 2. Aplatir l'arbre pour la recherche interne
+    # 2. Flatten tree for internal search
     def flatten_tree(nodes):
         sections = []
         for n in nodes:
@@ -51,7 +67,8 @@ def vectorless_rag_no_loss(query: str, tree: list[dict], model: str) -> str:
                 "node_id": n["node_id"],
                 "title": n["title"],
                 "pages": f"{n.get('page_start', n.get('page_index', '?'))}",
-                "content": content
+                "content": content,
+                "base64_images": n.get("base64_images", []),
             })
             if n.get("nodes"):
                 sections.extend(flatten_tree(n["nodes"]))
@@ -59,7 +76,7 @@ def vectorless_rag_no_loss(query: str, tree: list[dict], model: str) -> str:
 
     all_sections = flatten_tree(tree)
     
-    # 3. Recherche par mots-clés en Python (Vitesse CPU maximale)
+    # 3. Keyword search in Python (Maximum CPU speed)
     scored_sections = []
     for sec in all_sections:
         search_text = f"{sec['title']} {sec['content']}"
@@ -67,11 +84,11 @@ def vectorless_rag_no_loss(query: str, tree: list[dict], model: str) -> str:
         if score > 0:
             scored_sections.append((score, sec))
     
-    # Tri par pertinence
+    # Sort by relevance
     scored_sections.sort(key=lambda x: x[0], reverse=True)
     
-    # Sélection des nœuds correspondants
-    retrieved_nodes = [sec for score, sec in scored_sections][:3] # Top 2 sections max
+    # Select corresponding nodes
+    retrieved_nodes = [sec for score, sec in scored_sections][:3] # Top 3 sections max
     
     # Fallback si rien ne matche
     if not retrieved_nodes:
@@ -80,7 +97,7 @@ def vectorless_rag_no_loss(query: str, tree: list[dict], model: str) -> str:
     # Extraction des données pour l'affichage demandé
     node_ids = [n["node_id"] for n in retrieved_nodes]
     section_titles = [n["title"] for n in retrieved_nodes]
-
+    
     # 4. Affichage dynamique des résultats intermédiaires (Comme demandé)
     # Simulation du raisonnement sémantique pour la console
     main_node = node_ids[0] if node_ids else "?"
@@ -93,44 +110,55 @@ def vectorless_rag_no_loss(query: str, tree: list[dict], model: str) -> str:
    # 5. Construction du contexte réel sans aucune perte de données
     context_list = []
     source_citations = [] # ✨ Liste pour mémoriser les sources exactes
-    
+    ollama_images = []
+
     for sec in retrieved_nodes:
         truncated_content = sec['content'][:2500] 
         context_list.append(f"[Page: {sec['pages']} | Section: {sec['title']}]\n{truncated_content}") # On stocke le couple (Titre, Page) pour l'affichage final
         source_citations.append(f"Section: '{sec['title']}', Page {sec['pages']}")
-    
+
+        # Grab the string list right out of RAM
+        for b64_str in sec.get("base64_images", []):
+            ollama_images.append(b64_str)
+
     context = "\n\n".join(context_list)
     
     # 6. Appel final à Ollama
     generation_prompt = f"""You are an advanced AI. Answer the query using ONLY the verified document context below. 
 If the context contains math formulas or matrices, preserve them exactly. Cite the exact pages if needed.
+If an image corresponds to a figure mentioned in the query (e.g., fig 4), analyze it carefully and include it in your answer.
 
 Query: {query}
 
 Context:
 {context}"""
 
-    final_res = ollama.chat(
-        model=model, 
-        messages=[{"role": "user", "content": generation_prompt}],
-        options={
-            "num_ctx": 4096,
-            "num_predict": 200
-        }
-    )
-    # Calcul de sécurité avant l'envoi
+    message_payload = {"role": "user", "content": generation_prompt}
+    # Attach image strings to Ollama format seamlessly
+    if ollama_images:
+        print(f"🖼️ Loaded {len(ollama_images)} image(s) from RAM directly into Ollama.")
+        message_payload["images"] = ollama_images
+
+    try:
+        final_res = ollama.chat(
+            model=model, 
+            messages=[message_payload],
+            options={"num_ctx": 4096, "num_predict": 256}
+        )
+        answer = final_res["message"]["content"].strip()
+    except Exception as e:
+        answer = f"Error during multimodal execution: {str(e)}"
+    # Check context window usage
     total_chars = len(generation_prompt)
     predicted_tokens = int(total_chars / 4)
-    context_limit = 4096  # La limite fixée dans num_ctx
+    context_limit = 4096  # The limit fixed in num_ctx
 
     print(f"📥 Context Load: {predicted_tokens}/{context_limit} tokens ({(predicted_tokens/context_limit)*100:.1f}%)")
 
     if predicted_tokens > context_limit:
         print("⚠️ Warning: Prompt is larger than num_ctx! Text will be truncated by Ollama.")
-
-    answer = final_res["message"]["content"]
     
-    # Afficher la réponse ET les sources associées
+    # Display the response AND the associated sources
     print(f"📝 Answer:\n{answer}\n")
     print("📍 Sources used:")
     for citation in source_citations:
