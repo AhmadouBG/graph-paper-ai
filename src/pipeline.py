@@ -83,110 +83,88 @@ def vectorless_rag_no_loss(query: str, tree: list[dict], model: str) -> str:
     print_tree(tree)
     print("\n" + "="*60)
 
-    # 2. Flatten tree for internal search
-    def flatten_tree(nodes):
-        sections = []
+   # ── ÉTAPE 1 : Recherche sémantique de l'arbre via Ollama ──────────────────
+    print("🔍 Executing LLM Tree Search...")
+    selected_ids = llm_tree_search_ollama(query, tree, model)
+    
+    # ── ÉTAPE 2 : Extraction récursive des nœuds complets sélectionnés ────────
+    def find_nodes(nodes, target_ids):
+        found = []
         for n in nodes:
-            content = n.get("content", "").strip() or n.get("text", "").strip()
-            sections.append({
-                "node_id": n["node_id"],
-                "title": n["title"],
-                "pages": f"{n.get('page_start', n.get('page_index', '?'))}",
-                "content": content,
-                "base64_images": n.get("base64_images", []),
-            })
+            if n["node_id"] in target_ids:
+                found.append(n)
             if n.get("nodes"):
-                sections.extend(flatten_tree(n["nodes"]))
-        return sections
+                found.extend(find_nodes(n["nodes"], target_ids))
+        return found
 
-    all_sections = flatten_tree(tree)
+    retrieved_nodes = find_nodes(tree, selected_ids)
     
-    # 3. Keyword search in Python (Maximum CPU speed)
-    scored_sections = []
-    for sec in all_sections:
-        search_text = f"{sec['title']} {sec['content']}"
-        score = _compute_simple_score(query, search_text)
-        if score > 0:
-            scored_sections.append((score, sec))
-    
-    # Sort by relevance
-    scored_sections.sort(key=lambda x: x[0], reverse=True)
-    
-    # Select corresponding nodes
-    retrieved_nodes = [sec for score, sec in scored_sections][:3] # Top 3 sections max
-    
-    # Fallback si rien ne matche
+    # Sécurité si le LLM n'a rien sélectionné ou s'est trompé d'ID
     if not retrieved_nodes:
-        retrieved_nodes = all_sections[:2]
+        print("⚠️ No valid nodes found by LLM. Using fallback section.")
+        retrieved_nodes = [tree[0]]
 
-    # Extraction des données pour l'affichage demandé
+    # Extraction des données pour l'affichage final
     node_ids = [n["node_id"] for n in retrieved_nodes]
     section_titles = [n["title"] for n in retrieved_nodes]
     
-    # 4. Affichage dynamique des résultats intermédiaires (Comme demandé)
-    # Simulation du raisonnement sémantique pour la console
-    main_node = node_ids[0] if node_ids else "?"
-    main_title = section_titles[0] if section_titles else "?"
-    print(f"🧠 Reasoning: The query asks about '{query}'. Looking at the document tree, the most relevant section under '{main_title}' is node_id '{main_node}'. This node likely covers the core information, supplemented by subsequent sections.")
     print(f"🎯 Retrieved node IDs: {node_ids}")
     print(f"📄 Sections found: {section_titles}")
     print("="*60 + "\n")
 
-   # 5. Construction du contexte réel sans aucune perte de données
+    # ── ÉTAPE 3 : Collecte du contexte réel et des images Base64 ──────────────
     context_list = []
-    source_citations = [] # ✨ Liste pour mémoriser les sources exactes
+    source_citations = []
     ollama_images = []
-
+    
     for sec in retrieved_nodes:
-        truncated_content = sec['content'][:2500] 
-        context_list.append(f"[Page: {sec['pages']} | Section: {sec['title']}]\n{truncated_content}") # On stocke le couple (Titre, Page) pour l'affichage final
-        source_citations.append(f"Section: '{sec['title']}', Page {sec['pages']}")
-
-        # Grab the string list right out of RAM
+        # Tronquer le contenu textuel pour ne pas saturer le deuxième appel CPU
+        truncated_content = sec.get("content", "")[:2500]
+        pages_range = f"{sec.get('page_start', '?')}-{sec.get('page_end', '?')}"
+        
+        context_list.append(f"[Pages: {pages_range} | Section: {sec['title']}]\n{truncated_content}")
+        source_citations.append(f"Section: '{sec['title']}', Page {pages_range}")
+        
+        # Récupération des images Base64 stockées en RAM
         for b64_str in sec.get("base64_images", []):
             ollama_images.append(b64_str)
-
+            
     context = "\n\n".join(context_list)
-    
-    # 6. Appel final à Ollama
-    generation_prompt = f"""You are an advanced AI. Answer the query using ONLY the verified document context below. 
-If the context contains math formulas or matrices, preserve them exactly. Cite the exact pages if needed.
-If an image corresponds to a figure mentioned in the query (e.g., fig 4), analyze it carefully and include it in your answer.
+
+    # ── ÉTAPE 4 : Génération de la réponse finale avec le contexte complet ────
+    generation_prompt = f"""You are an advanced Vision-Language AI. 
+Answer the query using ONLY the verified document context below.
+If images are provided, analyze them carefully to build your response.
 
 Query: {query}
 
 Context:
 {context}"""
 
-    message_payload = {"role": "user", "content": generation_prompt}
-    # Attach image strings to Ollama format seamlessly
+    message_payload = {
+        "role": "user",
+        "content": generation_prompt
+    }
+    
     if ollama_images:
-        print(f"🖼️ Loaded {len(ollama_images)} image(s) from RAM directly into Ollama.")
+        print(f"I'll upload {len(ollama_images)} image(s) from memory to Ollama content.")
         message_payload["images"] = ollama_images
 
     try:
+        # Deuxième appel LLM : Génération finale
         final_res = ollama.chat(
             model=model, 
             messages=[message_payload],
-            options={"num_ctx": 4096, "num_predict": 256}
+            options={
+                "num_ctx": 4096,
+                "num_predict": 256
+            }
         )
         answer = final_res["message"]["content"].strip()
     except Exception as e:
-        answer = f"Error during multimodal execution: {str(e)}"
-    # Check context window usage
-    total_chars = len(generation_prompt)
-    predicted_tokens = int(total_chars / 4)
-    context_limit = 4096  # The limit fixed in num_ctx
+        answer = f"Error during final response generation: {str(e)}"
 
-    print(f"📥 Context Load: {predicted_tokens}/{context_limit} tokens ({(predicted_tokens/context_limit)*100:.1f}%)")
-
-    if predicted_tokens > context_limit:
-        print("⚠️ Warning: Prompt is larger than num_ctx! Text will be truncated by Ollama.")
-    
-    # Display the response AND the associated sources
-    print(f"📝 Answer:\n{answer}\n")
-    print("📍 Sources used:")
-    for citation in source_citations:
-        print(f"👉 {citation}")
-        
-    return {"answer": answer, "sources": source_citations}
+    return {
+        "answer": answer,
+        "sources": source_citations
+    }

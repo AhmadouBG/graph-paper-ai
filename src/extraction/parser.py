@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-
-import logging
 from pathlib import Path
+from llama_parse import LlamaParse 
+import logging
 import re
 from dotenv import load_dotenv
-from llama_cloud import AsyncLlamaCloud
 import base64
 
 logger = logging.getLogger(__name__)
@@ -22,40 +21,63 @@ async def _parse_with_llamaparse(pdf_path: Path, api_key: str):
         expand=["items"],
         version="latest",
     )
-    return result
+    return result 
 
-async def _get_images_as_base64_map(raw_result, api_key: str) -> dict[int, list[str]]:
-    """Fetches images from LlamaCloud and converts them straight to Base64 strings in RAM."""
+async def run_pipeline_orchestration(pdf_path: Path, api_key: str) -> list[dict]:
+    print(f"Parsing: {pdf_path} with LlamaParse SDK...")
     
-    client = AsyncLlamaCloud(api_key=api_key)
+    # Étape 1 : Initialisation officielle recommandée
+    parser = LlamaParse(
+        api_key=api_key,
+        result_type="markdown",  # Conserve le formatage des titres pour l'arbre
+        verbose=True
+    )
+    
+    # Étape 2 : Récupération du résultat JSON complet
+    json_objs = parser.get_json_result(str(pdf_path))
+    json_list = json_objs[0]["pages"]
+    
+    # Étape 3 : Extraction des images directement associés à chaque page en RAM
+    # LlamaParse stocke les métadonnées d'images par page dans json_objs.
+    # Pour éviter le téléchargement physique, nous créons un dictionnaire {page_num: [base64_strings]}
     page_image_map = {}
     
-    pages = getattr(raw_result.items, "pages", []) if hasattr(raw_result, "items") else []
-    
-    for idx, page in enumerate(pages):
-        page_num = idx + 1
+    print("🖼️ Mapping images to pages and converting to Base64 in RAM...")
+    for page_data in json_list:
+        page_num = page_data["page"]
         page_image_map[page_num] = []
         
-        for item in getattr(page, "items", []):
-            if getattr(item, "type", "") == "image":
-                image_id = getattr(item, "id", None) or getattr(item, "name", None)
-                if not image_id:
-                    continue
-                
-                try:
-                    # 1. Fetch image bytes into RAM
-                    image_bytes = await client.parsing.get_image(
-                        file_id=raw_result.id, 
-                        image_id=image_id
-                    )
-                    # 2. Encode to Base64 string directly
-                    base64_str = base64.b64encode(image_bytes).decode('utf-8')
-                    page_image_map[page_num].append(base64_str)
+        # Récupération des images de la page courante via le SDK
+        # Si get_images demande un chemin, on peut utiliser les données brutes "images" du JSON de la page si présentes
+        if "images" in page_data:
+            for img_info in page_data["images"]:
+                # Si l'image contient déjà les bytes ou si on passe par une conversion directe :
+                if "base64" in img_info:
+                    page_image_map[page_num].append(img_info["base64"])
+                elif "bytes" in img_info:
+                    import base64
+                    b64_str = base64.b64encode(img_info["bytes"]).decode('utf-8')
+                    page_image_map[page_num].append(b64_str)
                     
-                except Exception as e:
-                    logger.warning(f"Failed to fetch image {image_id} on page {page_num}: {e}")
-                    
-    return page_image_map
+        # Alternative officielle si vous préférez utiliser la méthode get_images du SDK sans stockage persistant :
+        # On utilise un dossier temporaire en RAM (BytesIO / Tempfile virtuel) ou le dossier local standard :
+        # images_dicts = parser.get_images(json_objs, download_path="tmp_imgs")
+        
+    # Étape 4 : Extraction du texte brut markdown complet
+    # On reconstruit la chaîne markdown globale intégrant les balises de pages indispensables à votre arbre
+    markdown_chunks = []
+    for page_data in json_list:
+        page_num = page_data["page"]
+        markdown_chunks.append(f"--- Page {page_num} ---")
+        markdown_chunks.append(page_data.get("md", page_data.get("text", "")))
+        
+    markdown_content = "\n".join(markdown_chunks)
+    
+    # Étape 5 : Construction de votre arbre textuel connecté aux images en mémoire
+    tree = _build_pure_text_tree(markdown_content, page_image_map)
+    
+    return tree
+
 
 
 def _build_pure_text_tree(markdown_text: str, page_image_map: dict[int, list[str]]) -> list[dict]:
