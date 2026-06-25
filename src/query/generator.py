@@ -1,89 +1,69 @@
-# from __future__ import annotations
+from __future__ import annotations
 
-# import base64
-# import re
-# from pathlib import Path
-
-# import ollama
+import ollama
 
 
-# def _collect_images(nodes: list[dict]) -> list[str]:
-#     paths: list[str] = []
-#     seen: set[str] = set()
-#     for node in nodes:
-#         for v in node.get("visuals", []):
-#             p = v.get("path") or ""
-#             if p and Path(p).exists() and p not in seen:
-#                 seen.add(p)
-#                 paths.append(p)
-#     return paths
+def generate_answer(query: str, retrieved_nodes: list[dict], model: str) -> dict:
+    """
+    Builds a context string and an image list from the retrieved nodes,
+    then calls Ollama (text-only or multimodal) to produce the final answer.
 
+    Returns:
+        dict with keys "answer" (str) and "sources" (list[str])
+    """
+    context_list: list[str] = []
+    source_citations: list[str] = []
+    ollama_images: list[str] = []
 
-# def generate_answer(
-#     query: str,
-#     nodes: list[dict],
-#     model: str,
-# ) -> str:
-#     if not nodes:
-#         return "No relevant sections found in the document."
+    for sec in retrieved_nodes:
+        truncated_content = sec.get("content", "")[:2500]
+        pages_range = f"{sec.get('page_start', '?')}-{sec.get('page_end', '?')}"
 
-#     context_parts = []
-#     figures_info = []
+        context_list.append(f"[Pages: {pages_range} | Section: {sec['title']}]\n{truncated_content}")
+        source_citations.append(f"Section: '{sec['title']}', Page {pages_range}")
 
-#     for node in nodes:
-#         figure_mentions = re.findall(r"(Figure \d+: [^\n.]+)", node.get("summary", ""))
-#         for fig_desc in figure_mentions:
-#             figures_info.append(
-#                 f"- {fig_desc} (Section: '{node['title']}' | Page {node.get('page_index', '?')})"
-#             )
+        for b64_str in sec.get("base64_images", []):
+            ollama_images.append(b64_str)
 
-#         context_parts.append(
-#             f"[Section: '{node['title']}' | Page {node.get('page_index', '?')}]\n"
-#             f"{node.get('text', 'Content not available.')}"
-#         )
+    context = "\n\n".join(context_list)
 
-#         for v in node.get("visuals", []):
-#             img_id = v.get("image_id", "")
-#             if img_id:
-#                 figures_info.append(
-#                     f"- {img_id} (Section: '{node['title']}' | Page "
-#                     f"{v.get('page', node.get('page_index', '?'))})"
-#                 )
+    generation_prompt = f"""You are an advanced, highly precise AI assistant. 
+Answer the user query based strictly on the verified text context and any attached visual data provided below.
 
-#         for t in node.get("tables", []):
-#             md = t.get("markdown_content", "")
-#             if md:
-#                 context_parts.append(
-#                     f"[Table on page {t.get('page', node.get('page_index', '?'))}]\n{md}"
-#                 )
+INSTRUCTIONS:
+1. Focus directly on answering the specific query.
+2. If the query is text-based, use the text context (including tables and formulas) to answer accurately.
+3. If the query refers to a chart, diagram, or Figure (and visual data is attached), carefully analyze the image(s) to formulate your answer.
+4. Always maintain precision and cite specific data or page numbers from the context when applicable.
 
-#     context = "\n\n---\n\n".join(context_parts)
+Query: {query}
 
-#     if figures_info:
-#         figures_section = "\n\n---\n\n" + "Figures Mentioned:\n" + "\n".join(figures_info)
-#         context += figures_section
+Context:
+{context}"""
 
-#     prompt = f"""You are an expert document analyst.
-# Answer the question using ONLY the provided context.
-# For every claim you make, cite the section title and page number in parentheses.
-# If the context mentions figures, graphs, or images, ensure you reference them appropriately.
-# Be concise and precise.
+    message_payload: dict = {
+        "role": "user",
+        "content": generation_prompt
+    }
 
-# Question: {query}
+    if ollama_images:
+        print(f"🖼️ Attaching {len(ollama_images)} image(s) from memory to Ollama multimodal context.")
+        message_payload["images"] = ollama_images
 
-# Context:
-# {context}
+    try:
+        final_res = ollama.chat(
+            model=model,
+            messages=[message_payload],
+            options={
+                "num_ctx": 4096,
+                "num_predict": 256
+            }
+        )
+        answer = final_res["message"]["content"].strip()
+    except Exception as e:
+        answer = f"Error during final response generation: {str(e)}"
 
-# Answer:"""
-
-#     image_paths = _collect_images(nodes)
-#     images_b64 = []
-#     for p in image_paths:
-#         images_b64.append(base64.b64encode(Path(p).read_bytes()).decode("utf-8"))
-
-#     response = ollama.chat(
-#         model=model,
-#         messages=[{"role": "user", "content": prompt, "images": images_b64}]
-#     )
-#     return response["message"]["content"]
-
+    return {
+        "answer": answer,
+        "sources": source_citations
+    }

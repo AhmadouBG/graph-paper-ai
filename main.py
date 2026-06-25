@@ -7,11 +7,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import ollama
-
-# Importation de vos fonctions personnalisées
+from llama_parse import LlamaParse
+from src.extraction import extract_images_with_captions 
 from src.pipeline import vectorless_rag_no_loss
-# Assurez-vous d'importer vos deux nouvelles fonctions depuis votre dossier source
-from src.extraction.parser import _parse_with_llamaparse, _build_pure_text_tree, _get_images_as_base64_map
+from src.extraction.parser import _build_pure_text_tree
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -24,42 +23,59 @@ def _url_to_host(url: str) -> str:
     parsed = urlparse(url)
     return f"{parsed.hostname}:{parsed.port}" if parsed.port else parsed.hostname
 
+
 async def run_pipeline_orchestration(pdf_path: Path, api_key: str) -> list[dict]:
-    """
-    Fonction orchestratrice asynchrone pour chaîner LlamaParse, 
-    l'extraction d'images en RAM et la construction de l'arbre.
-    """
-    print(f"Parsing: {pdf_path} with LlamaParse (Agentic Tier)...")
-    raw_result = await _parse_with_llamaparse(pdf_path, api_key)
+    # 1. Extraction locale et ultra-rapide des images + légendes avec PyMuPDF
+    print(f"🖼️ Extracting figures and captions locally with PyMuPDF...")
+    liste_images_locales = extract_images_with_captions(str(pdf_path))
     
-    # 1. Extraction du Markdown textuel
-    markdown_content = getattr(raw_result, "markdown", "")
-    if not markdown_content and isinstance(raw_result, dict):
-        markdown_content = raw_result.get("markdown", "")
+    # Construction des dictionnaires de correspondance pour l'arbre
+    page_image_map = {}
+    page_captions_text = {} # Permet d'injecter la légende dans le texte pour la recherche
+    
+    for img in liste_images_locales:
+        p_num = img["numero_page"]
+        if p_num not in page_image_map:
+            page_image_map[p_num] = []
+            page_captions_text[p_num] = []
+            
+        page_image_map[p_num].append(img["base64"])
+        if img["legende_detectee"] != "Aucune légende trouvée":
+            page_captions_text[p_num].append(f"[Visual Component] Caption: {img['legende_detectee']}")
+
+    # 2. LlamaParse standard (plus besoin d'activer l'option payante 'use_vendor_multimodal_model')
+    print(f"Parsing text: {pdf_path} with LlamaParse Standard...")
+    parser = LlamaParse(
+        api_key=api_key,
+        result_type="markdown",
+        verbose=True
+    )
+    
+    json_objs = parser.get_json_result(str(pdf_path))
+    json_list = json_objs[0]["pages"] if isinstance(json_objs, list) else json_objs["pages"]
+    
+    # 3. Reconstruction du flux Markdown
+    markdown_chunks = []
+    for page_data in json_list:
+        page_num = page_data["page"]
+        markdown_chunks.append(f"--- Page {page_num} ---")
         
-    # Reconstitution de secours si .markdown n'est pas fourni directement
-    if not markdown_content and hasattr(raw_result, "items"):
-        pages_md = []
-        for idx, page in enumerate(getattr(raw_result.items, "pages", [])):
-            pages_md.append(f"--- Page {idx + 1} ---")
-            for item in getattr(page, "items", []):
-                if hasattr(item, "md") and item.md:
-                    pages_md.append(item.md)
-                elif hasattr(item, "value") and item.value:
-                    pages_md.append(item.value)
-        markdown_content = "\n".join(pages_md)
-
-    if not markdown_content:
-        print("Error: Could not extract markdown text from LlamaParse response.")
-        sys.exit(1)
-
-    # 2. Chaînage propre : Extraction des images directement en Base64 dans la RAM
-    print("🖼️ Fetching document images and converting to Base64 in RAM...")
-    page_image_map = await _get_images_as_base64_map(raw_result, api_key)
+        # Injection des légendes locales directement dans le texte brut de la page correspondante
+        # Cela garantit que la recherche par mot-clé (ou LLM) trouvera "Fig 4" à la bonne page
+        if page_num in page_captions_text and page_captions_text[page_num]:
+            captions_block = "\n".join(page_captions_text[page_num])
+            markdown_chunks.append(captions_block)
+            
+        markdown_chunks.append(page_data.get("md", page_data.get("text", "")))
+        
+    markdown_content = "\n".join(markdown_chunks)
     
-    # 3. Construction de l'arbre final combinant Texte + Images Base64
+    # 4. Construction de l'arbre final associant le texte, les légendes et le Base64
     tree = _build_pure_text_tree(markdown_content, page_image_map)
+    
     return tree
+
+
 
 def main():
     parser = argparse.ArgumentParser(

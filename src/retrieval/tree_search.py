@@ -1,70 +1,92 @@
-# from __future__ import annotations
+from __future__ import annotations
 
-# import ollama
-# import json
+import json
+import re
 
-# def llm_tree_search_ollama(query: str, tree: list[dict], model: str) -> dict:
-#     # Compress tree to save tokens — only send titles + short summaries
-#     def flatten_and_compress(nodes) -> list[dict]:
-#         flat_list = []
-#         for n in nodes:
-#             # Récupération sécurisée du texte (on teste toutes les clés possibles de votre structure)
-#             text_content = n.get("text", "") or n.get("summary", "") or ""
-            
-#             flat_list.append({
-#                 "node_id": n["node_id"],
-#                 "title":   n["title"],
-#                 "page":    n.get("page_index", "?"),
-#                 "summary": text_content[:250] # Les 250 premiers caractères suffisent pour le choix
-#             })
-            
-#             # Si le nœud a des enfants (clé "nodes"), on les extrait et on les met à plat aussi
-#             if n.get("nodes"):
-#                 flat_list.extend(flatten_and_compress(n["nodes"]))
-                
-#         return flat_list
+import ollama
 
-#     # Production de la liste plate
-#     compressed_flat_tree = flatten_and_compress(tree)
-    
-    
-#     prompt = f"""You are given a query and a document's tree structure (like a Table of Contents).
-# Your task: identify which node IDs most likely contain the answer to the query.
-# Think step-by-step about which sections are relevant.
 
-# Query: {query}
+def llm_tree_search_ollama(query: str, tree: list[dict], model: str) -> list[str]:
+    """
+    Uses Ollama to analyze tree structures and select the most relevant node IDs.
+    Hardened for CPU: strictly sanitizes text previews to prevent JSON failures.
+    """
+    def compress_and_flatten(nodes):
+        flat_list = []
+        for n in nodes:
+            has_visuals = "Yes" if n.get("base64_images") else "No"
+            content_text = n.get("content", "")
 
-# Document Tree:
-# {json.dumps(compressed_flat_tree, indent=2)}
+            # Only extract clean captions added by PyMuPDF to prevent broken quotation marks
+            captions_found = re.findall(r'\[Visual Component\] Caption:\s*(.*?)(?:\n|$)', content_text)
 
-# Reply ONLY in this exact JSON format:
-# {{
-#   "thinking": "<your step-by-step reasoning>",
-#   "node_list": ["node_id1", "node_id2"]
-# }}"""
+            # Create a safe text preview devoid of JSON-breaking characters
+            safe_title = re.sub(r'["\\\x00-\x1f]', '', n["title"])
 
-#      # 2. Appel Ollama avec gestion des plantages du modèle 3B sur document long
-#     try:
-#         response = ollama.chat(
-#             model=model,
-#             messages=[{"role": "user", "content": prompt}],
-#             format="json", # Force Ollama à structurer sa sortie
-#             options={"num_ctx": 16384} # ✨ CORRECTION 2 : Augmente la fenêtre de contexte pour 22 pages
-#         )
-#         content = response["message"]["content"]
-#         return json.loads(content)
-        
-#     except (json.JSONDecodeError, KeyError, Exception) as e:
-#         # En cas de coupure ou JSON invalide par le modèle 3B, on applique un Fallback
-#         print(f"⚠️ Ollama JSON Error or Timeout: {e}. Extraction manuelle des IDs par Regex.")
-        
-#         # Tentative d'extraction des IDs par Regex si le JSON brut a coupé
-#         found_ids = re.findall(r'"node_id":\s*"(\d+)"', json.dumps(compressed_tree))
-#         # Fallback de secours : On renvoie les 3 premiers IDs de l'arbre pour éviter que le RAG renvoie None
-#         fallback_list = found_ids[:3] if found_ids else []
-        
-#         return {
-#             "thinking": "Fallback activated due to model generation error.",
-#             "node_list": fallback_list,
-#             "raw_response": content if 'content' in locals() else ""
-#         }
+            flat_list.append({
+                "node_id": n["node_id"],
+                "title": safe_title,
+                "pages": f"{n.get('page_start', '?')}-{n.get('page_end', '?')}",
+                "contains_images_or_figures": has_visuals,
+                "detected_captions": [re.sub(r'["\\\x00-\x1f]', '', c) for c in captions_found]
+            })
+            if n.get("nodes"):
+                flat_list.extend(compress_and_flatten(n["nodes"]))
+        return flat_list
+
+    compressed_tree = compress_and_flatten(tree)
+
+    prompt = f"""You are a document navigation assistant. Analyze the user query and the document structure layout.
+Select up to 3 Node IDs that are the most relevant to answer the query.
+
+CRITICAL RULE: If the query asks for a specific Figure (e.g., 'fig 4'), prioritize sections where 'contains_images_or_figures' is 'Yes' and matches the target caption number.
+
+Query: {query}
+
+Document Structure:
+{json.dumps(compressed_tree, indent=2)}
+
+Reply ONLY in this exact JSON format, do not write markdown blocks or trailing text:
+{{
+  "thinking": "<short reasoning>",
+  "node_list": ["node_id1", "node_id2"]
+}}"""
+
+    try:
+        response = ollama.chat(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            format="json",
+            options={
+                "num_ctx": 4096,
+            }
+        )
+        content = response["message"]["content"].strip()
+
+        # Clean potential LLM conversational garbage wraps
+        if not content.startswith("{"):
+            content = content[content.find("{"):content.rfind("}")+1]
+
+        result = json.loads(content)
+        print("\n" + "="*60)
+        print(f"🧠 LLM Tree Search Reasoning: {result.get('thinking', 'N/A')}")
+        return result.get("node_list", [])
+
+    except Exception as e:
+        print(f"⚠️ Ollama Tree Search Error: {e}. Activating Smart Keyword Fallback Strategy.")
+
+        # If Ollama crashes on JSON, Python scans the sanitized maps instantly
+        fig_match = re.search(r'fig(?:ure)?\.?\s*(\d+)', query.lower())
+        if fig_match:
+            target_fig = fig_match.group(0)       # e.g., "fig 4"
+            clean_target = re.sub(r'[.\s]+', '', target_fig)  # e.g., "fig4"
+
+            for item in compressed_tree:
+                combined_text = (item["title"] + " " + " ".join(item["detected_captions"])).lower()
+                clean_combined = re.sub(r'[.\s]+', '', combined_text)
+                if clean_target in clean_combined:
+                    print(f"🎯 Smart Fallback matched Node ID: {item['node_id']}")
+                    return [item["node_id"]]
+
+        # Ultimate safe fallback
+        return [tree[0]["node_id"]] if tree else []

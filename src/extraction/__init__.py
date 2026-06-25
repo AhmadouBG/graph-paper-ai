@@ -1,7 +1,7 @@
-from src.extraction.parser import _parse_with_llamaparse, _build_pure_text_tree, _get_images_as_base64_map
+from src.extraction.parser import _build_pure_text_tree
+from src.extraction.image_extractor import extract_images_with_captions
 
 __all__ = [
-    "_parse_with_llamaparse",
     "_build_pure_text_tree",
-    "_get_images_as_base64_map",
+    "extract_images_with_captions",
 ]
