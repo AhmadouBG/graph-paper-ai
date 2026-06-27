@@ -3,7 +3,21 @@ from __future__ import annotations
 import base64
 
 import fitz  # PyMuPDF
-
+# When you build page_image_map from extract_images_with_captions(), 
+# store tuples instead of bare base64 strings:
+def build_page_image_map(extracted_images: list[dict]) -> dict[int, list[dict]]:
+    """Groups extracted images by page, keeping caption alongside base64."""
+    page_map: dict[int, list[dict]] = {}
+    for img in extracted_images:
+        page = img["numero_page"]
+        if page not in page_map:
+            page_map[page] = []
+        page_map[page].append({
+            "base64": img["base64"],
+            "caption": img["legende_detectee"],
+            "extension": img["extension"],
+        })
+    return page_map
 
 def extract_images_with_captions(
     pdf_path: str,

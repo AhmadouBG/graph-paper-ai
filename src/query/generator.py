@@ -1,69 +1,106 @@
-from __future__ import annotations
-
+import re
 import ollama
 
 
-def generate_answer(query: str, retrieved_nodes: list[dict], model: str) -> dict:
-    """
-    Builds a context string and an image list from the retrieved nodes,
-    then calls Ollama (text-only or multimodal) to produce the final answer.
+def _extract_figure_number(query: str) -> str | None:
+    """Extract '5' from 'figure 5', 'fig. 5', 'fig5', etc."""
+    m = re.search(r'fig(?:ure)?\.?\s*(\d+)', query.lower())
+    return m.group(1) if m else None
 
-    Returns:
-        dict with keys "answer" (str) and "sources" (list[str])
+
+def _find_best_image_for_figure(
+    target_fig_num: str,
+    node: dict,
+) -> str | None:
     """
-    context_list: list[str] = []
-    source_citations: list[str] = []
-    ollama_images: list[str] = []
+    Scans the node's content for a [Visual Component] Caption line
+    that mentions the target figure number, then returns the base64
+    image at the matching index (first image = index 0, etc.).
+    Falls back to the first image if no caption matches.
+    """
+    content = node.get("content", "")
+    images = node.get("base64_images", [])
+    
+    if not images:
+        return None
+
+    # Find all caption lines in the node content (injected by run_pipeline)
+    caption_lines = re.findall(
+        r'\[Visual Component\] Caption:\s*(.*?)(?:\n|$)', content
+    )
+
+    # Try to match the target figure number against each caption
+    for i, caption in enumerate(caption_lines):
+        # Normalize: remove spaces/dots, lowercase → "fig1", "fig2", etc.
+        normalized = re.sub(r'[.\s]', '', caption.lower())
+        # Match "fig5", "figure5", "fig.5"
+        if re.search(rf'fig(?:ure)?{target_fig_num}\b', normalized):
+            # Return the image at the same index if available, else first
+            return images[i] if i < len(images) else images[0]
+
+    # No caption match — fall back to first image in the node
+    return images[0]
+
+
+def generate_answer(query: str, retrieved_nodes: list[dict], model: str) -> dict:
+    context_list = []
+    source_citations = []
+    ollama_images = []
+
+    is_visual_query = bool(
+        re.search(r'fig(?:ure)?|chart|image|graph|plot|table|show', query.lower())
+    )
+    
+    target_fig = _extract_figure_number(query)  # e.g. "5" or None
 
     for sec in retrieved_nodes:
         truncated_content = sec.get("content", "")[:2500]
         pages_range = f"{sec.get('page_start', '?')}-{sec.get('page_end', '?')}"
-
-        context_list.append(f"[Pages: {pages_range} | Section: {sec['title']}]\n{truncated_content}")
+        context_list.append(
+            f"[Pages: {pages_range} | Section: {sec['title']}]\n{truncated_content}"
+        )
         source_citations.append(f"Section: '{sec['title']}', Page {pages_range}")
 
-        for b64_str in sec.get("base64_images", []):
-            ollama_images.append(b64_str)
+        if is_visual_query:
+            images = sec.get("base64_images", [])
+            if not images:
+                continue
+
+            if target_fig:
+                matched = _find_best_image_for_figure(target_fig, sec)
+                if matched:
+                    ollama_images.append(matched)
+                    print(f"🎯 Matched Figure {target_fig} image from node '{sec['title']}'")
+            else:
+                # Generic visual query — send at most 1 image to stay fast
+                ollama_images.append(images[0])
+                print(f"🖼️ Generic visual query — attaching 1 image from '{sec['title']}'")
 
     context = "\n\n".join(context_list)
 
-    generation_prompt = f"""You are an advanced, highly precise AI assistant. 
-Answer the user query based strictly on the verified text context and any attached visual data provided below.
-
-INSTRUCTIONS:
-1. Focus directly on answering the specific query.
-2. If the query is text-based, use the text context (including tables and formulas) to answer accurately.
-3. If the query refers to a chart, diagram, or Figure (and visual data is attached), carefully analyze the image(s) to formulate your answer.
-4. Always maintain precision and cite specific data or page numbers from the context when applicable.
+    generation_prompt = f"""You are an advanced AI assistant running locally.
+Answer the user query based strictly on the context and any attached visual data below.
 
 Query: {query}
 
 Context:
 {context}"""
 
-    message_payload: dict = {
-        "role": "user",
-        "content": generation_prompt
-    }
+    message_payload = {"role": "user", "content": generation_prompt}
 
     if ollama_images:
-        print(f"🖼️ Attaching {len(ollama_images)} image(s) from memory to Ollama multimodal context.")
+        print(f"🖼️ Attaching {len(ollama_images)} image(s) to multimodal context.")
         message_payload["images"] = ollama_images
+    else:
+        print("📝 Text query — no images attached.")
 
-    try:
-        final_res = ollama.chat(
-            model=model,
-            messages=[message_payload],
-            options={
-                "num_ctx": 4096,
-                "num_predict": 256
-            }
-        )
-        answer = final_res["message"]["content"].strip()
-    except Exception as e:
-        answer = f"Error during final response generation: {str(e)}"
+    response = ollama.chat(
+        model=model,
+        messages=[message_payload],
+        options={"num_ctx": 4096, "num_predict": 1024, "temperature": 0.1}
+    )
 
     return {
-        "answer": answer,
-        "sources": source_citations
+        "answer": response["message"]["content"],
+        "sources": source_citations,
     }
