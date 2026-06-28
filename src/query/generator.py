@@ -2,18 +2,15 @@ import re
 import ollama
 
 # In generator.py
-
 def _find_figure_globally(
     target_fig_num: str,
     tree: list[dict],
     page_image_map: dict[int, list[dict]]
 ) -> str | None:
-    """
-    Two-pass search:
-    Pass 1: match against image_captions (PyMuPDF) — index-aligned with base64_images
-    Pass 2: match against content captions (LlamaParse) — use page_image_map directly
-    """
-    # ── Pass 1: image_captions (fast, index-aligned) ──────────────────────
+
+    normalized_target = f"fig{target_fig_num}"  # e.g. "fig4"
+
+    # ── Pass 1: image_captions on nodes (PyMuPDF, index-aligned) ─────────
     def walk_image_captions(nodes):
         for n in nodes:
             images = n.get("base64_images", [])
@@ -23,7 +20,7 @@ def _find_figure_globally(
                 if re.search(rf'fig(?:ure)?{re.escape(target_fig_num)}\b', normalized):
                     img = images[i] if i < len(images) else (images[0] if images else None)
                     if img:
-                        print(f"✅ Pass 1 match: Fig {target_fig_num} in node '{n['node_id']}'")
+                        print(f"✅ Pass 1: Fig {target_fig_num} in node '{n['node_id']}'")
                         return img
             if n.get("nodes"):
                 found = walk_image_captions(n["nodes"])
@@ -35,37 +32,50 @@ def _find_figure_globally(
     if result:
         return result
 
-    # ── Pass 2: content captions (LlamaParse) → page_image_map lookup ────
-    def walk_content_captions(nodes):
+    # ── Pass 2: search page_image_map directly by label ──────────────────
+    print(f"🔍 Pass 2: scanning page_image_map for '{normalized_target}'...")
+    for page_num in sorted(page_image_map.keys()):
+        for img_dict in page_image_map[page_num]:
+            label_norm = re.sub(r'[.\s]', '', img_dict.get("label", "").lower())
+            cap_norm = re.sub(r'[.\s]', '', img_dict.get("caption", "").lower())
+            if re.search(rf'fig(?:ure)?{re.escape(target_fig_num)}\b', label_norm) or \
+               re.search(rf'fig(?:ure)?{re.escape(target_fig_num)}\b', cap_norm):
+                print(f"✅ Pass 2: Fig {target_fig_num} found on page {page_num} | label='{img_dict['label']}'")
+                return img_dict["base64"]
+
+    # ── Pass 3: content captions → find page → get image from page_image_map
+    print(f"🔍 Pass 3: scanning content captions in tree...")
+    def walk_content(nodes):
         for n in nodes:
-            content = n.get("content", "")
             content_caps = re.findall(
-                r'\[Visual Component\] Caption:\s*(.*?)(?:\n|$)', content
+                r'\[Visual Component\] Caption:\s*(.*?)(?:\n|$)',
+                n.get("content", "")
             )
             for caption in content_caps:
                 normalized = re.sub(r'[.\s]', '', caption.lower())
                 if re.search(rf'fig(?:ure)?{re.escape(target_fig_num)}\b', normalized):
-                    # Found the caption in content — now find the image by page
-                    # Search page_image_map for this figure's page
-                    for page_num, imgs in page_image_map.items():
-                        for img_dict in imgs:
-                            img_label = re.sub(r'[.\s]', '', img_dict.get("label", "").lower())
-                            img_cap = re.sub(r'[.\s]', '', img_dict.get("caption", "").lower())
-                            if re.search(rf'fig(?:ure)?{re.escape(target_fig_num)}\b', img_label) or \
-                               re.search(rf'fig(?:ure)?{re.escape(target_fig_num)}\b', img_cap):
-                                print(f"✅ Pass 2 match: Fig {target_fig_num} on page {page_num}")
-                                return img_dict["base64"]
-                    # Caption found in content but no page_image_map match
-                    # — figure might be a table rendered without extractable image
-                    print(f"⚠️ Fig {target_fig_num} caption found in content but no image in page_image_map")
+                    # Found in content — get image from the node's page range
+                    page_start = n.get("page_start", 0)
+                    page_end = n.get("page_end", page_start)
+                    for pnum in range(page_start, page_end + 1):
+                        if pnum in page_image_map:
+                            for img_dict in page_image_map[pnum]:
+                                if img_dict.get("base64"):
+                                    print(f"✅ Pass 3: Fig {target_fig_num} via content caption, page {pnum}")
+                                    return img_dict["base64"]
             if n.get("nodes"):
-                found = walk_content_captions(n["nodes"])
+                found = walk_content(n["nodes"])
                 if found:
                     return found
         return None
 
-    return walk_content_captions(tree)
-    
+    result = walk_content(tree)
+    if result:
+        return result
+
+    print(f"❌ Fig {target_fig_num} not found in any pass.")
+    return None
+
 def _extract_figure_number(query: str) -> str | None:
     """Extract '5' from 'figure 5', 'fig. 5', 'fig5', etc."""
     m = re.search(r'fig(?:ure)?\.?\s*(\d+)', query.lower())
@@ -109,7 +119,8 @@ def _find_best_image_for_figure(target_fig_num: str, node: dict) -> str | None:
     return None  # no match — do NOT fall back
 
 
-def generate_answer(query: str, retrieved_nodes: list[dict], model: str, full_tree: list[dict] = None) -> dict:
+def generate_answer(query: str, retrieved_nodes: list[dict], model: str, full_tree: list[dict] = None,
+                    page_image_map: dict = None) -> dict:
     context_list = []
     source_citations = []
     ollama_images = []
@@ -141,17 +152,17 @@ def generate_answer(query: str, retrieved_nodes: list[dict], model: str, full_tr
                 matched = _find_best_image_for_figure(target_fig, sec)
                 if matched:
                     ollama_images.append(matched)
-                    print(f"🎯 Matched Figure {target_fig} in node '{sec['title']}'")
+                    print(f"🎯 Matched Fig {target_fig} in retrieved node '{sec['title']}'")
                     break
 
-            # If not found and we have the full tree, search everything
+            # Full tree search with page_image_map fallback
             if not ollama_images and full_tree:
                 print(f"⚠️ Searching full tree for Figure {target_fig}...")
-                matched = _find_figure_in_tree(target_fig, full_tree)
+                matched = _find_figure_globally(target_fig, full_tree, page_image_map or {})
                 if matched:
                     ollama_images.append(matched)
 
-        elif is_visual_query and not target_fig:
+        elif is_visual_query:
             for sec in retrieved_nodes:
                 images = sec.get("base64_images", [])
                 if images:
@@ -179,7 +190,7 @@ Context:
     response = ollama.chat(
         model=model,
         messages=[message_payload],
-        options={"num_ctx": 4096, "num_predict": 256, "temperature": 0.0}
+        options={"num_ctx": 2048, "num_predict": 256, "temperature": 0.0}
     )
 
     return {

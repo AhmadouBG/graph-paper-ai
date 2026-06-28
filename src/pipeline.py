@@ -15,7 +15,7 @@ def print_tree(nodes: list[dict], indent: int = 0) -> None:
             print_tree(node["nodes"], indent + 1)
 
 
-def vectorless_rag_no_loss(query: str, tree: list[dict], model: str) -> dict:
+def vectorless_rag_no_loss(query: str, tree: list[dict], model: str, page_image_map: dict = None) -> dict:
     """
     Full RAG pipeline:
       1. Tree Search  — select relevant node IDs with an LLM
@@ -30,4 +30,4 @@ def vectorless_rag_no_loss(query: str, tree: list[dict], model: str) -> dict:
     retrieved_nodes = retrieve_nodes(selected_ids, tree)
 
     # 3. Generator
-    return generate_answer(query, retrieved_nodes, model, full_tree= tree)
+    return generate_answer(query, retrieved_nodes, model, full_tree=tree, page_image_map=page_image_map or {})

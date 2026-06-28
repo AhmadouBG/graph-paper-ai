@@ -42,43 +42,53 @@ def build_caption_map_from_markdown(markdown_text: str) -> dict[int, list[dict]]
     
     return caption_map
 
-
 def match_images_to_captions(
     page_image_map: dict[int, list[dict]],
     caption_map: dict[int, list[dict]],
     lookahead_pages: int = 1
 ) -> dict[int, list[dict]]:
-    """
-    For each image, find its caption by checking:
-    1. Same page as image
-    2. Page immediately after (caption sometimes follows figure)
-    
-    Returns enriched page_image_map with 'caption' filled from LlamaParse.
-    """
     enriched: dict[int, list[dict]] = {}
-    
+
     for page_num, images in page_image_map.items():
         enriched[page_num] = []
-        
+
         # Collect captions from this page and next N pages
         candidate_captions = []
         for offset in range(lookahead_pages + 1):
             check_page = page_num + offset
             if check_page in caption_map:
                 candidate_captions.extend(caption_map[check_page])
-        
+
+        # ✨ KEY FIX: separate fig captions from table captions
+        # Images are figures/charts — prefer Fig/Figure captions over Table captions
+        fig_captions = [
+            c for c in candidate_captions
+            if re.match(r'fig(?:ure)?', c["normalized"], re.IGNORECASE)
+        ]
+        table_captions = [
+            c for c in candidate_captions
+            if re.match(r'table', c["normalized"], re.IGNORECASE)
+        ]
+
         for i, img in enumerate(images):
-            # Try to assign the i-th caption to the i-th image on this page
-            if i < len(candidate_captions):
+            # Try to assign a figure caption first
+            if i < len(fig_captions):
+                cap = fig_captions[i]
+            elif i < len(table_captions):
+                # Only use table caption if no figure caption available
+                cap = table_captions[i]
+            else:
+                cap = None
+
+            if cap:
                 enriched[page_num].append({
                     "base64": img["base64"],
                     "extension": img["extension"],
-                    "caption": candidate_captions[i]["full_caption"],
-                    "label": candidate_captions[i]["label"],
-                    "normalized_label": candidate_captions[i]["normalized"],
+                    "caption": cap["full_caption"],
+                    "label": cap["label"],
+                    "normalized_label": cap["normalized"],
                 })
             else:
-                # No caption found — keep image but mark it
                 enriched[page_num].append({
                     "base64": img["base64"],
                     "extension": img["extension"],
@@ -86,5 +96,5 @@ def match_images_to_captions(
                     "label": "",
                     "normalized_label": "",
                 })
-    
+
     return enriched

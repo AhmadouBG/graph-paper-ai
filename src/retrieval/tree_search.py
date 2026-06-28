@@ -4,7 +4,7 @@ import re
 import threading
 import ollama
 
-TREE_SEARCH_MODEL = "qwen2.5vl:3b"
+TREE_SEARCH_MODEL = "qwen2.5:3b"
 
 
 def _safe_parse_json(raw: str) -> dict:

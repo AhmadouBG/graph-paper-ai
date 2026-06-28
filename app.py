@@ -60,6 +60,18 @@ def run_pipeline(pdf_path: str) -> list[dict]:
     caption_map = build_caption_map_from_markdown(markdown_content)
     page_image_map = match_images_to_captions(raw_page_image_map, caption_map)
 
+
+    # DEBUG — remove after fixing
+    print("\n🔍 DEBUG PAGE_IMAGE_MAP:")
+    for page, imgs in page_image_map.items():
+        for img in imgs:
+            print(f"  p.{page} → label='{img['label']}' | caption='{img['caption'][:60]}'")
+
+    print("\n🔍 DEBUG CAPTION_MAP:")
+    for page, caps in caption_map.items():
+        for cap in caps:
+            print(f"  p.{page} → label='{cap['label']}' | normalized='{cap['normalized']}'")
+
     # Now inject captions into markdown for tree context
     page_captions_text = {}
     for page_num, imgs in page_image_map.items():
@@ -84,7 +96,7 @@ def run_pipeline(pdf_path: str) -> list[dict]:
     with st.spinner("Assembling Context-Aware Document Tree..."):
         tree = _build_pure_text_tree(markdown_content, page_image_map)
 
-    return tree
+    return tree, page_image_map
 
 
 def check_ollama(model: str, url: str) -> bool:
@@ -129,7 +141,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "pdf_name" not in st.session_state:
     st.session_state.pdf_name = ""
-
+if "page_image_map" not in st.session_state:  
+    st.session_state.page_image_map = {}
 # ── SIDEBAR CONFIGURATION ───────────────────────────────────────────────────
 with st.sidebar:
     model = st.text_input("Ollama Model", value=DEFAULT_MODEL)
@@ -172,6 +185,7 @@ with st.sidebar:
             st.session_state.tree = None
             st.session_state.messages = []
             st.session_state.pdf_name = ""
+            st.session_state.page_image_map = {} 
             st.rerun()
 
 # ── INTERFACE GRAPHIQUE PRINCIPALE ──────────────────────────────────────────
@@ -198,7 +212,7 @@ if not st.session_state.tree:
                 tmp_path = tmp.name
 
             try:
-                st.session_state.tree = run_pipeline(tmp_path)
+                st.session_state.tree, st.session_state.page_image_map = run_pipeline(tmp_path)
                 st.session_state.pdf_name = uploaded_file.name
                 st.session_state.messages = []
                 st.rerun()
@@ -243,7 +257,8 @@ else:
                     with st.spinner("Executing Context-Aware Routing & Visual Analysis..."):
                         # ✨ Exécute le pipeline hybride durci et fluide sur CPU
                         result = vectorless_rag_no_loss(
-                            prompt, st.session_state.tree, model
+                            prompt, st.session_state.tree, model,
+                            page_image_map=st.session_state.page_image_map  # store it in session state
                         )
                     
                     st.markdown(result["answer"])
