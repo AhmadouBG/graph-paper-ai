@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from src.extraction import extract_images_with_captions, build_page_image_map
 from src.extraction.parser import _build_pure_text_tree, _parse_with_llamacloud
 from src.pipeline import vectorless_rag_no_loss, print_tree
-
+from src.extraction.extract_caption import build_caption_map_from_markdown, match_images_to_captions
 
 load_dotenv()
 
@@ -41,31 +41,47 @@ def run_pipeline(pdf_path: str) -> list[dict]:
     with st.spinner("Extracting figures and captions locally with PyMuPDF..."):
         liste_images_locales = extract_images_with_captions(pdf_path)
 
-    page_image_map = build_page_image_map(liste_images_locales)
-    # Fix: extract caption string from each dict
-    page_captions_text = {
-        p: [f"[Visual Component] Caption: {img['caption']}" 
-            for img in imgs if img["caption"] != "Aucune légende trouvée"]
-        for p, imgs in page_image_map.items()
-    }
+    # Build raw image map (base64 only, PyMuPDF captions as fallback)
+    raw_page_image_map = build_page_image_map(liste_images_locales)
 
     with st.spinner("Parsing text structure with LlamaParse..."):
         json_list = _parse_with_llamacloud(tmp_path, api_key)
 
+    # Build markdown
     markdown_chunks = []
     for page_data in json_list:
-        page_num = page_data["page"]  # dict access, not attribute
+        page_num = page_data["page"]
         markdown_chunks.append(f"--- Page {page_num} ---")
-        
-        if page_num in page_captions_text and page_captions_text[page_num]:
-            markdown_chunks.append("\n".join(page_captions_text[page_num]))
-    
         markdown_chunks.append(page_data.get("md", ""))
+    markdown_content = "\n".join(markdown_chunks)
 
+    # ✨ Extract captions from LlamaParse markdown (reliable) 
+    # and match them to PyMuPDF images (actual pixels)
+    caption_map = build_caption_map_from_markdown(markdown_content)
+    page_image_map = match_images_to_captions(raw_page_image_map, caption_map)
+
+    # Now inject captions into markdown for tree context
+    page_captions_text = {}
+    for page_num, imgs in page_image_map.items():
+        caps = [
+            f"[Visual Component] Caption: {img['caption']}"
+            for img in imgs
+            if img["caption"] != "Aucune légende trouvée"
+        ]
+        if caps:
+            page_captions_text[page_num] = caps
+
+    # Rebuild markdown with injected captions
+    markdown_chunks = []
+    for page_data in json_list:
+        page_num = page_data["page"]
+        markdown_chunks.append(f"--- Page {page_num} ---")
+        if page_num in page_captions_text:
+            markdown_chunks.append("\n".join(page_captions_text[page_num]))
+        markdown_chunks.append(page_data.get("md", ""))
     markdown_content = "\n".join(markdown_chunks)
 
     with st.spinner("Assembling Context-Aware Document Tree..."):
-        # ✨ Assurez-vous que votre parser de fichiers accepte bien page_image_map en 2e argument
         tree = _build_pure_text_tree(markdown_content, page_image_map)
 
     return tree

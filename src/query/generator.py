@@ -1,7 +1,71 @@
 import re
 import ollama
 
+# In generator.py
 
+def _find_figure_globally(
+    target_fig_num: str,
+    tree: list[dict],
+    page_image_map: dict[int, list[dict]]
+) -> str | None:
+    """
+    Two-pass search:
+    Pass 1: match against image_captions (PyMuPDF) — index-aligned with base64_images
+    Pass 2: match against content captions (LlamaParse) — use page_image_map directly
+    """
+    # ── Pass 1: image_captions (fast, index-aligned) ──────────────────────
+    def walk_image_captions(nodes):
+        for n in nodes:
+            images = n.get("base64_images", [])
+            captions = n.get("image_captions", [])
+            for i, caption in enumerate(captions):
+                normalized = re.sub(r'[.\s]', '', caption.lower())
+                if re.search(rf'fig(?:ure)?{re.escape(target_fig_num)}\b', normalized):
+                    img = images[i] if i < len(images) else (images[0] if images else None)
+                    if img:
+                        print(f"✅ Pass 1 match: Fig {target_fig_num} in node '{n['node_id']}'")
+                        return img
+            if n.get("nodes"):
+                found = walk_image_captions(n["nodes"])
+                if found:
+                    return found
+        return None
+
+    result = walk_image_captions(tree)
+    if result:
+        return result
+
+    # ── Pass 2: content captions (LlamaParse) → page_image_map lookup ────
+    def walk_content_captions(nodes):
+        for n in nodes:
+            content = n.get("content", "")
+            content_caps = re.findall(
+                r'\[Visual Component\] Caption:\s*(.*?)(?:\n|$)', content
+            )
+            for caption in content_caps:
+                normalized = re.sub(r'[.\s]', '', caption.lower())
+                if re.search(rf'fig(?:ure)?{re.escape(target_fig_num)}\b', normalized):
+                    # Found the caption in content — now find the image by page
+                    # Search page_image_map for this figure's page
+                    for page_num, imgs in page_image_map.items():
+                        for img_dict in imgs:
+                            img_label = re.sub(r'[.\s]', '', img_dict.get("label", "").lower())
+                            img_cap = re.sub(r'[.\s]', '', img_dict.get("caption", "").lower())
+                            if re.search(rf'fig(?:ure)?{re.escape(target_fig_num)}\b', img_label) or \
+                               re.search(rf'fig(?:ure)?{re.escape(target_fig_num)}\b', img_cap):
+                                print(f"✅ Pass 2 match: Fig {target_fig_num} on page {page_num}")
+                                return img_dict["base64"]
+                    # Caption found in content but no page_image_map match
+                    # — figure might be a table rendered without extractable image
+                    print(f"⚠️ Fig {target_fig_num} caption found in content but no image in page_image_map")
+            if n.get("nodes"):
+                found = walk_content_captions(n["nodes"])
+                if found:
+                    return found
+        return None
+
+    return walk_content_captions(tree)
+    
 def _extract_figure_number(query: str) -> str | None:
     """Extract '5' from 'figure 5', 'fig. 5', 'fig5', etc."""
     m = re.search(r'fig(?:ure)?\.?\s*(\d+)', query.lower())
