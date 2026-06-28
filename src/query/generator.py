@@ -7,42 +7,47 @@ def _extract_figure_number(query: str) -> str | None:
     m = re.search(r'fig(?:ure)?\.?\s*(\d+)', query.lower())
     return m.group(1) if m else None
 
+def _find_figure_in_tree(target_fig_num: str, tree: list[dict]) -> str | None:
+    """Walk the entire tree to find the image matching the figure number."""
+    def walk(nodes):
+        for n in nodes:
+            result = _find_best_image_for_figure(target_fig_num, n)
+            if result:
+                print(f"🔍 Found Figure {target_fig_num} in node '{n['title']}'")
+                return result
+            if n.get("nodes"):
+                found = walk(n["nodes"])
+                if found:
+                    return found
+        return None
+    return walk(tree)
 
-def _find_best_image_for_figure(
-    target_fig_num: str,
-    node: dict,
-) -> str | None:
-    """
-    Scans the node's content for a [Visual Component] Caption line
-    that mentions the target figure number, then returns the base64
-    image at the matching index (first image = index 0, etc.).
-    Falls back to the first image if no caption matches.
-    """
-    content = node.get("content", "")
+def _find_best_image_for_figure(target_fig_num: str, node: dict) -> str | None:
     images = node.get("base64_images", [])
-    
+    captions = node.get("image_captions", [])
+
     if not images:
         return None
 
-    # Find all caption lines in the node content (injected by run_pipeline)
-    caption_lines = re.findall(
-        r'\[Visual Component\] Caption:\s*(.*?)(?:\n|$)', content
-    )
-
-    # Try to match the target figure number against each caption
-    for i, caption in enumerate(caption_lines):
-        # Normalize: remove spaces/dots, lowercase → "fig1", "fig2", etc.
+    # Try caption list stored on the node
+    for i, caption in enumerate(captions):
         normalized = re.sub(r'[.\s]', '', caption.lower())
-        # Match "fig5", "figure5", "fig.5"
-        if re.search(rf'fig(?:ure)?{target_fig_num}\b', normalized):
-            # Return the image at the same index if available, else first
+        if re.search(rf'fig(?:ure)?{re.escape(target_fig_num)}\b', normalized):
             return images[i] if i < len(images) else images[0]
 
-    # No caption match — fall back to first image in the node
-    return images[0]
+    # Try [Visual Component] Caption: lines inside the content text
+    content = node.get("content", "")
+    content_captions = re.findall(r'\[Visual Component\] Caption:\s*(.*?)(?:\n|$)', content)
+    for i, caption in enumerate(content_captions):
+        normalized = re.sub(r'[.\s]', '', caption.lower())
+        if re.search(rf'fig(?:ure)?{re.escape(target_fig_num)}\b', normalized):
+            return images[i] if i < len(images) else images[0]
+
+    # No match — do NOT fall back to images[0]
+    return None
 
 
-def generate_answer(query: str, retrieved_nodes: list[dict], model: str) -> dict:
+def generate_answer(query: str, retrieved_nodes: list[dict], model: str, full_tree: list[dict] = None) -> dict:
     context_list = []
     source_citations = []
     ollama_images = []
@@ -54,6 +59,13 @@ def generate_answer(query: str, retrieved_nodes: list[dict], model: str) -> dict
     target_fig = _extract_figure_number(query)  # e.g. "5" or None
 
     for sec in retrieved_nodes:
+        print(f"\n🔍 DEBUG GENERATOR NODE: {sec['node_id']} | {sec['title']}")
+        print(f"   image_captions: {sec.get('image_captions', [])}")
+        print(f"   base64_images count: {len(sec.get('base64_images', []))}")
+        content_caps = re.findall(r'\[Visual Component\] Caption:\s*(.*?)(?:\n|$)', sec.get('content',''))
+        print(f"   content captions: {content_caps}")
+        print(f"   target_fig: {target_fig}")
+        print(f"   is_visual_query: {is_visual_query}")
         truncated_content = sec.get("content", "")[:2500]
         pages_range = f"{sec.get('page_start', '?')}-{sec.get('page_end', '?')}"
         context_list.append(
@@ -61,20 +73,28 @@ def generate_answer(query: str, retrieved_nodes: list[dict], model: str) -> dict
         )
         source_citations.append(f"Section: '{sec['title']}', Page {pages_range}")
 
-        if is_visual_query:
-            images = sec.get("base64_images", [])
-            if not images:
-                continue
-
-            if target_fig:
+        if is_visual_query and target_fig:
+            # First try retrieved nodes
+            for sec in retrieved_nodes:
                 matched = _find_best_image_for_figure(target_fig, sec)
                 if matched:
                     ollama_images.append(matched)
-                    print(f"🎯 Matched Figure {target_fig} image from node '{sec['title']}'")
-            else:
-                # Generic visual query — send at most 1 image to stay fast
-                ollama_images.append(images[0])
-                print(f"🖼️ Generic visual query — attaching 1 image from '{sec['title']}'")
+                    print(f"🎯 Matched Figure {target_fig} in node '{sec['title']}'")
+                    break
+
+            # If not found and we have the full tree, search everything
+            if not ollama_images and full_tree:
+                print(f"⚠️ Searching full tree for Figure {target_fig}...")
+                matched = _find_figure_in_tree(target_fig, full_tree)
+                if matched:
+                    ollama_images.append(matched)
+
+        elif is_visual_query and not target_fig:
+            for sec in retrieved_nodes:
+                images = sec.get("base64_images", [])
+                if images:
+                    ollama_images.append(images[0])
+                    break
 
     context = "\n\n".join(context_list)
 
@@ -97,7 +117,7 @@ Context:
     response = ollama.chat(
         model=model,
         messages=[message_payload],
-        options={"num_ctx": 4096, "num_predict": 1024, "temperature": 0.1}
+        options={"num_ctx": 4096, "num_predict": 256, "temperature": 0.0}
     )
 
     return {

@@ -1,9 +1,10 @@
 from __future__ import annotations
 import json
 import re
+import threading
 import ollama
 
-TREE_SEARCH_MODEL = "qwen2.5vl:3b"  # ← change to whatever text model you have
+TREE_SEARCH_MODEL = "qwen2.5vl:3b"
 
 
 def _safe_parse_json(raw: str) -> dict:
@@ -31,18 +32,46 @@ def _safe_parse_json(raw: str) -> dict:
     raise ValueError("Could not parse JSON.")
 
 
+def _call_ollama_with_timeout(model: str, prompt: str, timeout_seconds: int = 15) -> str | None:
+    result = [None]
+    error = [None]
+
+    def _call():
+        try:
+            response = ollama.chat(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                format="json",
+                options={
+                    "num_ctx": 4096,
+                    "num_predict": 256,
+                    "temperature": 0.0,
+                }
+            )
+            result[0] = response["message"]["content"].strip()
+        except Exception as e:
+            error[0] = e
+
+    thread = threading.Thread(target=_call, daemon=True)
+    thread.start()
+    thread.join(timeout=timeout_seconds)
+
+    if thread.is_alive():
+        print(f"⏱️ Tree search timed out after {timeout_seconds}s.")
+        return None
+    if error[0]:
+        print(f"⚠️ Ollama error: {error[0]}")
+        return None
+    return result[0]
+
+
 def llm_tree_search_ollama(query: str, tree: list[dict], model: str) -> list[str]:
-    """
-    Tree search using a dedicated text model for reliable JSON output.
-    `model` is the vision model used for generation — tree search uses
-    TREE_SEARCH_MODEL instead for reliable instruction following.
-    """
+
     def compress(nodes):
         out = []
         for n in nodes:
             has_visuals = "Yes" if n.get("base64_images") else "No"
             content_text = n.get("content", "")
-
             captions = re.findall(
                 r'\[Visual Component\] Caption:\s*(.*?)(?:\n|$)', content_text
             )
@@ -65,26 +94,36 @@ def llm_tree_search_ollama(query: str, tree: list[dict], model: str) -> list[str
                     for c in n["nodes"]
                 ]
             out.append(entry)
-
-            # Also flatten children for search
             if n.get("nodes"):
                 out.extend(compress(n["nodes"]))
         return out
 
     compressed = compress(tree)
 
-    # Build the tree structure for the prompt (without _search key)
+    # ── 1. Figure shortcut: skip LLM, match caption directly ─────────────
+    fig_match = re.search(r'fig(?:ure)?\.?\s*(\d+)', query.lower())
+    if fig_match:
+        target_num = fig_match.group(1)
+        for item in compressed:
+            for caption in item["figure_captions"]:
+                normalized = re.sub(r'[.\s]', '', caption.lower())
+                if re.search(rf'fig(?:ure)?{re.escape(target_num)}\b', normalized):
+                    print(f"🎯 Figure shortcut → node {item['node_id']} (caption: {caption})")
+                    return [item["node_id"]]
+        print(f"⚠️ No caption match for Figure {target_num}, trying LLM.")
+
+    # ── 2. LLM tree search (with timeout) ────────────────────────────────
     tree_for_prompt = [
         {k: v for k, v in item.items() if k != "_search"}
         for item in compressed
     ]
 
-    prompt = f"""You are a document navigation assistant. Your task is to find which sections of a document contain the answer to a user query.
+    prompt = f"""You are a document navigation assistant. Find which sections contain the answer to the query.
 
 Think step-by-step:
 1. Read the query carefully.
-2. Scan each node's title, preview text, and figure captions.
-3. Select the 1-2 node IDs most likely to contain the answer.
+2. Scan each node's title, preview text, and figure_captions.
+3. Select 1-2 node IDs most likely to contain the answer.
 
 Query: {query}
 
@@ -97,52 +136,37 @@ Reply ONLY in this exact JSON format, no markdown, no extra text:
   "node_list": ["node_id1", "node_id2"]
 }}"""
 
-    # ── Attempt with dedicated text model ────────────────────────────────
-    try:
-        response = ollama.chat(
-            model=TREE_SEARCH_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            format="json",
-            options={
-                "num_ctx": 8192,   # text models handle more context
-                "num_predict": 300,
-                "temperature": 0.0,
-            }
-        )
-        content = response["message"]["content"].strip()
-        result = _safe_parse_json(content)
+    content = _call_ollama_with_timeout(TREE_SEARCH_MODEL, prompt, timeout_seconds=15)
 
-        # Validate IDs exist in tree
-        valid_ids = {item["node_id"] for item in compressed}
-        node_list = [nid for nid in result.get("node_list", []) if nid in valid_ids]
+    if content:
+        try:
+            result = _safe_parse_json(content)
+            valid_ids = {item["node_id"] for item in compressed}
+            node_list = [nid for nid in result.get("node_list", []) if nid in valid_ids]
+            if node_list:
+                print(f"\n{'='*60}")
+                print(f"🧠 LLM reasoning: {result.get('thinking', 'N/A')}")
+                print(f"✅ Selected nodes: {node_list}")
+                return node_list
+            print("⚠️ LLM returned no valid node IDs.")
+        except Exception as e:
+            print(f"⚠️ Parse error: {e}")
 
-        if node_list:
-            print(f"\n{'='*60}")
-            print(f"🧠 LLM reasoning: {result.get('thinking', 'N/A')}")
-            print(f"✅ Selected nodes: {node_list}")
-            return node_list
-
-        print("⚠️ LLM returned no valid node IDs.")
-
-    except Exception as e:
-        print(f"⚠️ Tree search error: {e}")
-
-    # ── Python keyword fallback (only if LLM fails) ───────────────────────
+    # ── 3. Keyword fallback ───────────────────────────────────────────────
     print("↩️ Falling back to keyword scorer.")
     return _keyword_fallback(query, compressed)
 
 
 def _keyword_fallback(query: str, compressed: list[dict]) -> list[str]:
-    """Keyword scorer as safety net only."""
     query_lower = query.lower()
 
-    # Figure query
+    # Figure query — also handled here in case shortcut missed
     fig_match = re.search(r'fig(?:ure)?\.?\s*(\d+)', query_lower)
     if fig_match:
         target_num = fig_match.group(1)
         for item in compressed:
             for cap in item["figure_captions"]:
-                if re.search(rf'fig(?:ure)?\.?\s*{target_num}\b', cap.lower()):
+                if re.search(rf'fig(?:ure)?\.?\s*{re.escape(target_num)}\b', cap.lower()):
                     print(f"🎯 Figure fallback → {item['node_id']}")
                     return [item["node_id"]]
 
@@ -165,8 +189,7 @@ def _keyword_fallback(query: str, compressed: list[dict]) -> list[str]:
         for w in query_words:
             pat = re.escape(w).replace(r'\-', r'[\s\-]') if '-' in w else re.escape(w)
             hits = len(re.findall(rf'\b{pat}\b', scope))
-            weight = 4 if '-' in w else 1
-            score += hits * weight
+            score += hits * (4 if '-' in w else 1)
             title_hits = len(re.findall(rf'\b{pat}\b', item['title'].lower()))
             score += title_hits * (6 if '-' in w else 3)
         if score > 0:
