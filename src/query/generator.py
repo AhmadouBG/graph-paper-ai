@@ -8,13 +8,21 @@ def _extract_figure_number(query: str) -> str | None:
     return m.group(1) if m else None
 
 def _find_figure_in_tree(target_fig_num: str, tree: list[dict]) -> str | None:
-    """Walk the entire tree to find the image matching the figure number."""
+    """
+    Walk every node and match target figure number against
+    image_captions (PyMuPDF, reliable) rather than content captions.
+    """
     def walk(nodes):
         for n in nodes:
-            result = _find_best_image_for_figure(target_fig_num, n)
-            if result:
-                print(f"🔍 Found Figure {target_fig_num} in node '{n['title']}'")
-                return result
+            images = n.get("base64_images", [])
+            captions = n.get("image_captions", [])
+            for i, caption in enumerate(captions):
+                normalized = re.sub(r'[.\s]', '', caption.lower())
+                if re.search(rf'fig(?:ure)?{re.escape(target_fig_num)}\b', normalized):
+                    img = images[i] if i < len(images) else (images[0] if images else None)
+                    if img:
+                        print(f"🎯 Found Fig {target_fig_num} in node '{n['node_id']}' | caption: {caption}")
+                        return img
             if n.get("nodes"):
                 found = walk(n["nodes"])
                 if found:
@@ -24,27 +32,17 @@ def _find_figure_in_tree(target_fig_num: str, tree: list[dict]) -> str | None:
 
 def _find_best_image_for_figure(target_fig_num: str, node: dict) -> str | None:
     images = node.get("base64_images", [])
-    captions = node.get("image_captions", [])
+    captions = node.get("image_captions", [])  # PyMuPDF captions — reliable index alignment
 
     if not images:
         return None
 
-    # Try caption list stored on the node
     for i, caption in enumerate(captions):
         normalized = re.sub(r'[.\s]', '', caption.lower())
         if re.search(rf'fig(?:ure)?{re.escape(target_fig_num)}\b', normalized):
             return images[i] if i < len(images) else images[0]
 
-    # Try [Visual Component] Caption: lines inside the content text
-    content = node.get("content", "")
-    content_captions = re.findall(r'\[Visual Component\] Caption:\s*(.*?)(?:\n|$)', content)
-    for i, caption in enumerate(content_captions):
-        normalized = re.sub(r'[.\s]', '', caption.lower())
-        if re.search(rf'fig(?:ure)?{re.escape(target_fig_num)}\b', normalized):
-            return images[i] if i < len(images) else images[0]
-
-    # No match — do NOT fall back to images[0]
-    return None
+    return None  # no match — do NOT fall back
 
 
 def generate_answer(query: str, retrieved_nodes: list[dict], model: str, full_tree: list[dict] = None) -> dict:

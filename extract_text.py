@@ -5,9 +5,9 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
-from llama_parse import LlamaParse
 
 from src.extraction import extract_images_with_captions
+from src.extraction.parser import _parse_with_llamacloud
 
 load_dotenv()
 
@@ -18,28 +18,15 @@ def extract_text(pdf_path: str) -> str:
         print("Error: LLAMA_CLOUD_API_KEY not set in .env")
         sys.exit(1)
 
-    print("Extracting images and captions...")
-    images = extract_images_with_captions(pdf_path)
-
-    page_captions = {}
-    for img in images:
-        p = img["numero_page"]
-        if p not in page_captions:
-            page_captions[p] = []
-        if img["legende_detectee"] and img["legende_detectee"] != "Aucune légende trouvée":
-            page_captions[p].append(f"[Visual Component] Caption: {img['legende_detectee']}")
-
     print("Parsing with LlamaParse...")
-    parser = LlamaParse(api_key=api_key, result_type="markdown", verbose=True)
-    json_objs = parser.get_json_result(pdf_path)
-    json_list = json_objs[0]["pages"] if isinstance(json_objs, list) else json_objs["pages"]
+    # 1. Initialize client (reads LLAMA_CLOUD_API_KEY from environment)
+    json_list = _parse_with_llamacloud(pdf_path, api_key)
+
 
     chunks = []
     for page in json_list:
         pn = page["page"]
         chunks.append(f"--- Page {pn} ---")
-        if pn in page_captions:
-            chunks.append("\n".join(page_captions[pn]))
         chunks.append(page.get("md", page.get("text", "")))
 
     return "\n".join(chunks)

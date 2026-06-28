@@ -28,7 +28,7 @@ def _parse_with_llamacloud(pdf_path: str, api_key: str) -> list[dict]:
         file_id=file.id,
         tier="agentic",
         version="latest",
-        expand=["markdown"],  # <--- CRITICAL: Ensures the JSON structure is loaded
+        expand=["markdown", "images_content_metadata"],  # <--- CRITICAL: Ensures the JSON structure is loaded
     )
 
     if result.markdown.pages:

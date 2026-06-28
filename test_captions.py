@@ -1,80 +1,49 @@
-"""Test caption detection reliability.
-
-Usage:
-    python test_captions.py path/to/paper.pdf
-
-Shows each detected image + caption and flags potential issues.
-"""
-
+import os
 import re
-import sys
-from pathlib import Path
+from llama_cloud import LlamaCloud
 
-from src.extraction import extract_images_with_captions
+# Initialize LlamaCloud Client
+client = LlamaCloud(api_key=os.environ.get("LLAMACLOUD_API_KEY"))
 
+file = client.files.create(file="file/plosone.pdf", purpose="parse")
 
-def analyze_captions(pdf_path: str):
-    results = extract_images_with_captions(pdf_path)
+# Execute the parse job with image expansion
+result = client.parsing.parse(
+    file_id=file.id,
+    tier="agentic",
+    version="latest",
+    output_options={
+        "markdown": {"tables": {"output_tables_as_markdown": True}},
+        "images_to_save": ["screenshot"],  # Captures the visual regions
+    },
+    expand=["markdown", "images_content_metadata"],  # Pulls text structure & image tokens
+)
 
-    total = len(results)
-    empty = 0
-    has_figure_ref = 0
-    partial = 0
+markdown_text = result.markdown
+images_metadata = result.images_content_metadata or []
 
-    print(f"\n{'='*70}")
-    print(f"PDF: {pdf_path}")
-    print(f"Total images detected: {total}")
-    print(f"{'='*70}\n")
+print("--- EXTRACTING IMAGES AND CAPTIONS FROM MARKDOWN ---")
 
-    for img in results:
-        page = img["numero_page"]
-        idx = img["index_image"]
-        caption = img["legende_detectee"]
+# Step 1: Find all markdown image tags like ![screenshot_p0_idx0.png](...)
+# This regex extracts the image reference tag name
+image_tags = re.findall(r"\!\[(.*?)\]\(.*?\)", markdown_text)
 
-        issues = []
+# Step 2: Split the document by the image markers to capture the surrounding content/captions
+segments = re.split(r"\!\[.*?\]\(.*?\)", markdown_text)
 
-        if caption == "Aucune légende trouvée":
-            issues.append("EMPTY")
-            empty += 1
-        else:
-            has_fig = bool(re.search(r'(?i)\b(?:fig|figure|table|tab)\b', caption))
-            if has_fig:
-                has_figure_ref += 1
-            else:
-                issues.append("NO FIGURE/TABLE REFERENCE")
-                partial += 1
-
-            has_number = bool(re.search(r'\d+', caption))
-            if not has_number:
-                issues.append("NO NUMBER")
-
-        status = " ".join(f"[{i}]" for i in issues) if issues else "[OK]"
-        print(f"  p.{page} img#{idx} {status}")
-        print(f"    Caption: {caption[:120]}")
-        print()
-
-    print(f"{'='*70}")
-    print(f"Summary:")
-    print(f"  Total images:       {total}")
-    print(f"  Empty captions:     {empty} ({empty/total*100:.0f}%)" if total else "  Empty captions:     0")
-    print(f"  With fig/table ref: {has_figure_ref} ({has_figure_ref/total*100:.0f}%)" if total else "  With fig/table ref: 0")
-    print(f"  Partial/no ref:     {partial} ({partial/total*100:.0f}%)" if total else "  Partial/no ref:     0")
-    print(f"{'='*70}")
-
-    if empty > 0:
-        print("\n⚠️  Some captions are empty — the caption zone may not overlap the text.")
-    if partial > 0:
-        print("\n⚠️  Some captions have no 'Figure'/'Table' keyword — may be partial text.")
-
-
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print(__doc__)
-        sys.exit(1)
-
-    pdf = sys.argv[1]
-    if not Path(pdf).exists():
-        print(f"File not found: {pdf}")
-        sys.exit(1)
-
-    analyze_captions(pdf)
+# Step 3: Match the extracted images with their adjacent text blocks (captions)
+for index, tag_name in enumerate(image_tags):
+    # The text following the image tag typically contains the figure caption
+    following_text = segments[index + 1].strip() if (index + 1) < len(segments) else ""
+    
+    # Grab the first 2-3 lines of text right below the image as the caption
+    caption_lines = [line.strip() for line in following_text.split("\n") if line.strip()]
+    extracted_caption = " ".join(caption_lines[:2]) if caption_lines else "No caption detected."
+    
+    print(f"\n🖼️ Found Image Tag: {tag_name}")
+    print(f"📝 Associated Caption text: \"{extracted_caption}\"")
+    
+    # Step 4: Map back to the temporary download URL from your expanded metadata
+    matching_meta = next((img for img in images_metadata if img.name in tag_name or tag_name in img.name), None)
+    if matching_meta:
+        print(f"🔗 Download URL: {matching_meta.download_url}")
