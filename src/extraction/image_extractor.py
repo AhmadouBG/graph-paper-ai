@@ -39,8 +39,6 @@ def extract_images_with_captions(pdf_path: str, top_margin: int = 70, bottom_mar
             })
 
     return extracted_images
-
-
 # OLD build_page_image_map — simplify to match new structure:
 def build_page_image_map(extracted_images: list[dict]) -> dict[int, list[dict]]:
     """Group images by page. Captions will be added later by match_images_to_captions."""

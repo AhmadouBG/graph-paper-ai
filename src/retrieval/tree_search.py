@@ -43,8 +43,8 @@ def _call_ollama_with_timeout(model: str, prompt: str, timeout_seconds: int = 15
                 messages=[{"role": "user", "content": prompt}],
                 format="json",
                 options={
-                    "num_ctx": 4096,
-                    "num_predict": 256,
+                    "num_ctx": 2048,
+                    "num_predict": 512,
                     "temperature": 0.0,
                 }
             )
@@ -136,7 +136,7 @@ Reply ONLY in this exact JSON format, no markdown, no extra text:
   "node_list": ["node_id1", "node_id2"]
 }}"""
 
-    content = _call_ollama_with_timeout(TREE_SEARCH_MODEL, prompt, timeout_seconds=15)
+    content = _call_ollama_with_timeout(TREE_SEARCH_MODEL, prompt, timeout_seconds=120)
 
     if content:
         try:

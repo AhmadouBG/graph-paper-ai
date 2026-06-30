@@ -14,6 +14,17 @@ def print_tree(nodes: list[dict], indent: int = 0) -> None:
         if node.get("nodes"):
             print_tree(node["nodes"], indent + 1)
 
+def get_total_pages(nodes: list[dict]) -> int:
+    """Walk entire tree and return the highest page_end found."""
+    max_page = 1
+    def walk(ns):
+        nonlocal max_page
+        for n in ns:
+            max_page = max(max_page, n.get("page_end", 1), n.get("page_start", 1))
+            if n.get("nodes"):
+                walk(n["nodes"])
+    walk(nodes)
+    return max_page
 
 def vectorless_rag_no_loss(query: str, tree: list[dict], model: str, page_image_map: dict = None) -> dict:
     """

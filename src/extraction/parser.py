@@ -65,7 +65,8 @@ def _build_pure_text_tree(markdown_text: str, page_image_map: dict[int, list[dic
             "content_lines": [],
             "base64_images": [img["base64"] for img in page_imgs],
             "image_captions": [img["caption"] for img in page_imgs],
-            "nodes": [],  # always present
+            "image_labels": [img["label"] for img in page_imgs],
+            "nodes": [],
         }
 
     intro_node = make_node(f"{node_counter:04d}", "Document Header / Introduction", 1)
