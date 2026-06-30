@@ -420,44 +420,63 @@ else:
                 })
 
     with figures_tab:
+        # DEBUG
+        def debug_tree_images(nodes, depth=0):
+            for n in nodes:
+                b64s = n.get("base64_images", [])
+                caps = n.get("image_captions", [])
+                labs = n.get("image_labels", [])
+                if b64s:
+                    st.write(f"{'  '*depth}[{n['node_id']}] {n['title']} → {len(b64s)} images")
+                    for i, b64 in enumerate(b64s):
+                        st.write(f"{'  '*depth}  img[{i}]: type={type(b64).__name__}, len={len(b64) if isinstance(b64,str) else 'N/A'}, label='{labs[i] if i<len(labs) else '?'}'")
+                if n.get("nodes"):
+                    debug_tree_images(n["nodes"], depth+1)
+        
+        debug_tree_images(st.session_state.tree)
+        st.divider()
+        
         all_imgs = collect_images(st.session_state.tree)
-        if all_imgs:
-            # Filter controls
-            filter_col, _ = st.columns([1, 3])
-            with filter_col:
-                filter_text = st.text_input(
-                    "Filter figures", placeholder="e.g. Fig 3 or 'distribution'",
-                    label_visibility="collapsed"
-                )
+        st.write(f"collect_images returned: {len(all_imgs)} images")
+        
+        # all_imgs = collect_images(st.session_state.tree)
+        # if all_imgs:
+        #     # Filter controls
+        #     filter_col, _ = st.columns([1, 3])
+        #     with filter_col:
+        #         filter_text = st.text_input(
+        #             "Filter figures", placeholder="e.g. Fig 3 or 'distribution'",
+        #             label_visibility="collapsed"
+        #         )
 
-            filtered = [
-                (title, page, b64, caption, label)
-                for title, page, b64, caption, label in all_imgs
-                if not filter_text or filter_text.lower() in caption.lower() or filter_text.lower() in label.lower()
-            ]
+        #     filtered = [
+        #         (title, page, b64, caption, label)
+        #         for title, page, b64, caption, label in all_imgs
+        #         if not filter_text or filter_text.lower() in caption.lower() or filter_text.lower() in label.lower()
+        #     ]
 
-            if not filtered:
-                st.info(f"No figures match '{filter_text}'.")
-            else:
-                st.caption(f"Showing {len(filtered)} of {len(all_imgs)} figures")
-                cols = st.columns(2)
-                for i, (title, page, b64, caption, label) in enumerate(filtered):
-                    with cols[i % 2]:
-                        st.image(
-                            f"data:image/png;base64,{b64}",
-                            use_container_width=True,
-                        )
-                        display_caption = caption if caption and caption != "Aucune légende trouvée" else title
-                        st.markdown(
-                            f'<p class="fig-caption">📄 p.{page} &nbsp;·&nbsp; {display_caption}</p>',
-                            unsafe_allow_html=True,
-                        )
-                        st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
-        else:
-            st.markdown(
-                """<div style='text-align:center;padding:3rem;color:#6b7a99'>
-                <div style='font-size:2rem;margin-bottom:0.5rem'>🖼️</div>
-                No figures were extracted from this document.
-                </div>""",
-                unsafe_allow_html=True,
-            )
+        #     if not filtered:
+        #         st.info(f"No figures match '{filter_text}'.")
+        #     else:
+        #         st.caption(f"Showing {len(filtered)} of {len(all_imgs)} figures")
+        #         cols = st.columns(2)
+        #         for i, (title, page, b64, caption, label) in enumerate(filtered):
+        #             with cols[i % 2]:
+        #                 st.image(
+        #                     f"data:image/png;base64,{b64}",
+        #                     use_container_width=True,
+        #                 )
+        #                 display_caption = caption if caption and caption != "Aucune légende trouvée" else title
+        #                 st.markdown(
+        #                     f'<p class="fig-caption">📄 p.{page} &nbsp;·&nbsp; {display_caption}</p>',
+        #                     unsafe_allow_html=True,
+        #                 )
+        #                 st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+        # else:
+        #     st.markdown(
+        #         """<div style='text-align:center;padding:3rem;color:#6b7a99'>
+        #         <div style='font-size:2rem;margin-bottom:0.5rem'>🖼️</div>
+        #         No figures were extracted from this document.
+        #         </div>""",
+        #         unsafe_allow_html=True,
+        #     )

@@ -132,9 +132,7 @@ def generate_answer(query: str, retrieved_nodes: list[dict], model: str, full_tr
     target_fig = _extract_figure_number(query)  # e.g. "5" or None
 
     for sec in retrieved_nodes:
-        print(f"\n🔍 DEBUG GENERATOR NODE: {sec['node_id']} | {sec['title']}")
-        print(f"   image_captions: {sec.get('image_captions', [])}")
-        print(f"   base64_images count: {len(sec.get('base64_images', []))}")
+  
         content_caps = re.findall(r'\[Visual Component\] Caption:\s*(.*?)(?:\n|$)', sec.get('content',''))
         print(f"   content captions: {content_caps}")
         print(f"   target_fig: {target_fig}")
