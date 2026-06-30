@@ -125,6 +125,13 @@ st.markdown("""
 
 /* Divider */
 hr { border-color: #e2e8f0; }
+[data-testid="stSidebar"] hr {
+    margin-top: -0.5rem !important;
+    margin-bottom: -0.5rem !important;
+}
+[data-testid="stSidebar"] h3 {
+    margin-top: 0.5rem !important;
+}
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 2px; }
@@ -164,7 +171,10 @@ def run_pipeline(pdf_path: str) -> tuple[list[dict], dict]:
 
     caption_map = build_caption_map_from_markdown(markdown_content)
     page_image_map = match_images_to_captions(raw_page_image_map, caption_map)
-
+    print("\n🔍 DEBUG page_image_map after match:")
+    for page, imgs in page_image_map.items():
+        for img in imgs:
+            print(f"  p.{page} label='{img.get('label','')}' cap='{img.get('caption','')[:50]}'")
     page_captions_text = {}
     for page_num, imgs in page_image_map.items():
         caps = [
@@ -266,6 +276,7 @@ with st.sidebar:
                 st.session_state[key] = None if key == "tree" else ([] if key == "messages" else {} if key == "page_image_map" else "")
             st.rerun()
         st.divider()
+        
         st.markdown("### 📚 Document")
         st.caption(f"**{st.session_state.pdf_name}**")
 
@@ -358,125 +369,87 @@ if not st.session_state.tree:
 
 else:
     # ── Chat interface ────────────────────────────────────────────────────
-    chat_tab, figures_tab = st.tabs(["💬 Chat", "🖼️ Figures"])
+    # chat_tab, figures_tab = st.tabs(["💬 Chat", "🖼️ Figures"])
 
-    with chat_tab:
-        # Welcome message if no history
-        if not st.session_state.messages:
-            fig_count = len(collect_images(st.session_state.tree))
-            node_count = count_nodes(st.session_state.tree)
-            st.markdown(
-                f"""<div style='border:1px solid #e2e8f0;
-                border-radius:12px;padding:1.25rem 1.5rem;margin-bottom:1rem'>
-                <div style='color:#4f8ef7;font-weight:600;margin-bottom:0.4rem'>
-                ✅ {st.session_state.pdf_name} is ready</div>
-                <div style='color:#6b7a99;font-size:0.875rem'>
-                Found <b style='color:#272829'>{node_count} sections</b> and
-                <b style='color:#272829'>{fig_count} figures</b>.
-                Ask me anything about this document.</div>
-                </div>""",
-                unsafe_allow_html=True,
-            )
+    # Welcome message if no history
+    if not st.session_state.messages:
+        fig_count = len(collect_images(st.session_state.tree))
+        node_count = count_nodes(st.session_state.tree)
+        st.markdown(
+            f"""<div style='border:1px solid #e2e8f0;
+            border-radius:12px;padding:1.25rem 1.5rem;margin-bottom:1rem'>
+            <div style='color:#4f8ef7;font-weight:600;margin-bottom:0.4rem'>
+            ✅ {st.session_state.pdf_name} is ready</div>
+            <div style='color:#6b7a99;font-size:0.875rem'>
+            Found <b style='color:#272829'>{node_count} sections</b> and
+            <b style='color:#272829'>{fig_count} figures</b>.
+            Ask me anything about this document.</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
 
-        # Message history
-        for msg in st.session_state.messages:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-                if msg.get("sources"):
+    # Message history
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            if msg.get("sources"):
+                with st.expander("📍 Sources", expanded=False):
+                    for s in msg["sources"]:
+                        st.markdown(f"- {s}")
+
+    # Input
+    if prompt := st.chat_input(
+        "Ask about text, a table, or a figure…",
+        disabled=not ollama_ok,
+    ):
+        if not ollama_ok:
+            st.error("Ollama is not connected.")
+        else:
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking…"):
+                    result = vectorless_rag_no_loss(
+                        prompt,
+                        st.session_state.tree,
+                        model,
+                        page_image_map=st.session_state.page_image_map,
+                    )
+                st.markdown(result["answer"])
+                if result.get("sources"):
                     with st.expander("📍 Sources", expanded=False):
-                        for s in msg["sources"]:
+                        for s in result["sources"]:
                             st.markdown(f"- {s}")
 
-        # Input
-        if prompt := st.chat_input(
-            "Ask about text, a table, or a figure…",
-            disabled=not ollama_ok,
-        ):
-            if not ollama_ok:
-                st.error("Ollama is not connected.")
-            else:
-                st.session_state.messages.append({"role": "user", "content": prompt})
-                with st.chat_message("user"):
-                    st.markdown(prompt)
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": result["answer"],
+                "sources": result.get("sources", []),
+            })
 
-                with st.chat_message("assistant"):
-                    with st.spinner("Thinking…"):
-                        result = vectorless_rag_no_loss(
-                            prompt,
-                            st.session_state.tree,
-                            model,
-                            page_image_map=st.session_state.page_image_map,
-                        )
-                    st.markdown(result["answer"])
-                    if result.get("sources"):
-                        with st.expander("📍 Sources", expanded=False):
-                            for s in result["sources"]:
-                                st.markdown(f"- {s}")
-
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": result["answer"],
-                    "sources": result.get("sources", []),
-                })
-
-    with figures_tab:
-        # DEBUG
-        def debug_tree_images(nodes, depth=0):
-            for n in nodes:
-                b64s = n.get("base64_images", [])
-                caps = n.get("image_captions", [])
-                labs = n.get("image_labels", [])
-                if b64s:
-                    st.write(f"{'  '*depth}[{n['node_id']}] {n['title']} → {len(b64s)} images")
-                    for i, b64 in enumerate(b64s):
-                        st.write(f"{'  '*depth}  img[{i}]: type={type(b64).__name__}, len={len(b64) if isinstance(b64,str) else 'N/A'}, label='{labs[i] if i<len(labs) else '?'}'")
-                if n.get("nodes"):
-                    debug_tree_images(n["nodes"], depth+1)
-        
-        debug_tree_images(st.session_state.tree)
-        st.divider()
-        
-        all_imgs = collect_images(st.session_state.tree)
-        st.write(f"collect_images returned: {len(all_imgs)} images")
-        
-        # all_imgs = collect_images(st.session_state.tree)
-        # if all_imgs:
-        #     # Filter controls
-        #     filter_col, _ = st.columns([1, 3])
-        #     with filter_col:
-        #         filter_text = st.text_input(
-        #             "Filter figures", placeholder="e.g. Fig 3 or 'distribution'",
-        #             label_visibility="collapsed"
-        #         )
-
-        #     filtered = [
-        #         (title, page, b64, caption, label)
-        #         for title, page, b64, caption, label in all_imgs
-        #         if not filter_text or filter_text.lower() in caption.lower() or filter_text.lower() in label.lower()
-        #     ]
-
-        #     if not filtered:
-        #         st.info(f"No figures match '{filter_text}'.")
-        #     else:
-        #         st.caption(f"Showing {len(filtered)} of {len(all_imgs)} figures")
-        #         cols = st.columns(2)
-        #         for i, (title, page, b64, caption, label) in enumerate(filtered):
-        #             with cols[i % 2]:
-        #                 st.image(
-        #                     f"data:image/png;base64,{b64}",
-        #                     use_container_width=True,
-        #                 )
-        #                 display_caption = caption if caption and caption != "Aucune légende trouvée" else title
-        #                 st.markdown(
-        #                     f'<p class="fig-caption">📄 p.{page} &nbsp;·&nbsp; {display_caption}</p>',
-        #                     unsafe_allow_html=True,
-        #                 )
-        #                 st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
-        # else:
-        #     st.markdown(
-        #         """<div style='text-align:center;padding:3rem;color:#6b7a99'>
-        #         <div style='font-size:2rem;margin-bottom:0.5rem'>🖼️</div>
-        #         No figures were extracted from this document.
-        #         </div>""",
-        #         unsafe_allow_html=True,
-        #     )
+    # with figures_tab:
+    #     all_imgs = collect_images(st.session_state.tree)
+    #     if all_imgs:
+    #         cols = st.columns(2)
+    #         for i, (title, page, b64, caption, label) in enumerate(all_imgs):
+    #                 with cols[i % 2]:
+    #                     st.image(
+    #                         f"data:image/png;base64,{b64}",
+    #                         use_container_width=True,
+    #                     )
+    #                     display_caption = caption if caption and caption != "Aucune légende trouvée" else title
+    #                     st.markdown(
+    #                         f'<p class="fig-caption">📄 p.{page} &nbsp;·&nbsp; {display_caption}</p>',
+    #                         unsafe_allow_html=True,
+    #                     )
+    #                     st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+    #     else:
+    #         st.markdown(
+    #             """<div style='text-align:center;padding:3rem;color:#6b7a99'>
+    #             <div style='font-size:2rem;margin-bottom:0.5rem'>🖼️</div>
+    #             No figures were extracted from this document.
+    #             </div>""",
+    #             unsafe_allow_html=True,
+    #         )

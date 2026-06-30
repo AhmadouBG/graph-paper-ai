@@ -54,18 +54,19 @@ def _build_pure_text_tree(markdown_text: str, page_image_map: dict[int, list[dic
     current_page = 1
     node_counter = 0
 
+    MIN_IMAGE_B64_LEN = 5000
+
     def make_node(node_id: str, title: str, page: int) -> dict:
-        """Helper to build a consistent node dict for any page."""
-        page_imgs = page_image_map.get(page, [])
+        # No image assignment here anymore — done later in finalize_tree
         return {
             "node_id": node_id,
             "title": title,
             "page_start": page,
             "page_end": page,
             "content_lines": [],
-            "base64_images": [img["base64"] for img in page_imgs],
-            "image_captions": [img["caption"] for img in page_imgs],
-            "image_labels": [img["label"] for img in page_imgs],
+            "base64_images": [],
+            "image_captions": [],
+            "image_labels": [],
             "nodes": [],
         }
 
@@ -103,6 +104,23 @@ def _build_pure_text_tree(markdown_text: str, page_image_map: dict[int, list[dic
             if stack and line.strip():
                 stack[-1]["node"]["content_lines"].append(line)
 
+    claimed_pages: set[int] = set()
+
+    def assign_images_to_node(n: dict) -> None:
+        """Assign all unclaimed real images within this node's page range."""
+        start = n["page_start"]
+        end = n.get("page_end", start)
+        for page in range(start, end + 1):
+            if page in claimed_pages:
+                continue
+            imgs = page_image_map.get(page, [])
+            real_imgs = [img for img in imgs if len(img.get("base64", "")) >= MIN_IMAGE_B64_LEN]
+            if real_imgs:
+                claimed_pages.add(page)
+                n["base64_images"].extend(img["base64"] for img in real_imgs)
+                n["image_captions"].extend(img["caption"] for img in real_imgs)
+                n["image_labels"].extend(img["label"] for img in real_imgs)
+
     def finalize_tree(nodes: list[dict], next_start: int | None = None) -> None:
         for i, n in enumerate(nodes):
             n["content"] = "\n".join(n["content_lines"])
@@ -115,8 +133,17 @@ def _build_pure_text_tree(markdown_text: str, page_image_map: dict[int, list[dic
                 finalize_tree(n["nodes"], n["page_end"])
 
     finalize_tree(root_nodes)
-    return root_nodes
 
+    # ✨ Now that page_end is correctly set everywhere, assign images by range
+    def walk_assign(nodes):
+        for n in nodes:
+            assign_images_to_node(n)
+            if n.get("nodes"):
+                walk_assign(n["nodes"])
+
+    walk_assign(root_nodes)
+
+    return root_nodes
  
 
 

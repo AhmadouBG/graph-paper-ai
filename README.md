@@ -1,1 +1,2 @@
 # graph-paper-ai
+note :Figures tab already falls back to the node title when caption is missing, and _find_figure_globally Pass 3 already searches by page range as a last resort. If a user asks "explain figure 1" and it's truly uncaptioned, the system will still find an image on the relevant page via context-based fallback — just without a confirmed caption match.
