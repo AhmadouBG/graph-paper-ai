@@ -3,6 +3,7 @@ import json
 import re
 import threading
 import ollama
+from rank_bm25 import BM25Okapi
 
 TREE_SEARCH_MODEL = "qwen2.5:3b"
 
@@ -31,6 +32,55 @@ def _safe_parse_json(raw: str) -> dict:
 
     raise ValueError("Could not parse JSON.")
 
+def _tokenize(text: str) -> list[str]:
+    """Simple tokenizer that preserves hyphenated compounds."""
+    text = text.lower()
+    tokens = re.findall(r'[a-z](?:-[a-z0-9]+)+|[a-z0-9]+', text)
+    stop_words = {
+        "what", "is", "the", "a", "an", "of", "and", "in", "to", "about",
+        "for", "on", "with", "how", "are", "does", "do", "can", "this",
+        "that", "it", "be", "was", "were", "has", "have", "had",
+    }
+    return [t for t in tokens if t not in stop_words and (len(t) > 2 or '-' in t)]
+
+
+def _bm25_fallback(query: str, compressed: list[dict]) -> list[str]:
+    """
+    BM25-ranked fallback. Better than raw keyword matching because it
+    normalizes for node length and weights rare terms (e.g. 'z-score') higher.
+    """
+    if not compressed:
+        return []
+
+    # Build corpus: title gets repeated 3x to weight it like before
+    corpus = []
+    for item in compressed:
+        title_tokens = _tokenize(item["title"]) * 3   # title weight
+        body_tokens = _tokenize(item["_search"])
+        corpus.append(title_tokens + body_tokens)
+
+    bm25 = BM25Okapi(corpus)
+    query_tokens = _tokenize(query)
+
+    if not query_tokens:
+        return [compressed[0]["node_id"]]
+
+    scores = bm25.get_scores(query_tokens)
+    ranked = sorted(
+        zip(scores, compressed), key=lambda x: x[0], reverse=True
+    )
+
+    if ranked[0][0] <= 0:
+        # No real match — fall back to first node
+        return [compressed[0]["node_id"]]
+
+    result = [ranked[0][1]["node_id"]]
+    # Include second node only if it scores at least half the top score
+    if len(ranked) > 1 and ranked[1][0] >= ranked[0][0] * 0.5:
+        result.append(ranked[1][1]["node_id"])
+
+    print(f"🎯 BM25 fallback → {result} (top score: {ranked[0][0]:.2f})")
+    return result
 
 def _call_ollama_with_timeout(model: str, prompt: str, timeout_seconds: int = 15) -> str | None:
     result = [None]
@@ -44,7 +94,7 @@ def _call_ollama_with_timeout(model: str, prompt: str, timeout_seconds: int = 15
                 format="json",
                 options={
                     "num_ctx": 2048,
-                    "num_predict": 512,
+                    "num_predict": 256,
                     "temperature": 0.0,
                 }
             )
@@ -65,7 +115,7 @@ def _call_ollama_with_timeout(model: str, prompt: str, timeout_seconds: int = 15
     return result[0]
 
 
-def llm_tree_search_ollama(query: str, tree: list[dict], model: str) -> list[str]:
+def llm_tree_search_ollama(query: str, tree: list[dict]) -> list[str]:
 
     def compress(nodes):
         out = []
@@ -136,7 +186,7 @@ Reply ONLY in this exact JSON format, no markdown, no extra text:
   "node_list": ["node_id1", "node_id2"]
 }}"""
 
-    content = _call_ollama_with_timeout(TREE_SEARCH_MODEL, prompt, timeout_seconds=120)
+    content = _call_ollama_with_timeout(TREE_SEARCH_MODEL, prompt)
 
     if content:
         try:
@@ -154,53 +204,5 @@ Reply ONLY in this exact JSON format, no markdown, no extra text:
 
     # ── 3. Keyword fallback ───────────────────────────────────────────────
     print("↩️ Falling back to keyword scorer.")
-    return _keyword_fallback(query, compressed)
+    return _bm25_fallback(query, compressed)
 
-
-def _keyword_fallback(query: str, compressed: list[dict]) -> list[str]:
-    query_lower = query.lower()
-
-    # Figure query — also handled here in case shortcut missed
-    fig_match = re.search(r'fig(?:ure)?\.?\s*(\d+)', query_lower)
-    if fig_match:
-        target_num = fig_match.group(1)
-        for item in compressed:
-            for cap in item["figure_captions"]:
-                if re.search(rf'fig(?:ure)?\.?\s*{re.escape(target_num)}\b', cap.lower()):
-                    print(f"🎯 Figure fallback → {item['node_id']}")
-                    return [item["node_id"]]
-
-    # Text query
-    stop_words = {
-        "what", "is", "the", "a", "an", "of", "and", "in", "to", "about",
-        "for", "on", "with", "how", "are", "does", "do", "can", "this",
-        "that", "it", "be", "was", "were", "has", "have", "had",
-    }
-    tokens = re.findall(r'[a-z](?:-[a-z0-9]+)+|[a-z0-9]+', query_lower)
-    query_words = [t for t in tokens if t not in stop_words and (len(t) > 2 or '-' in t)]
-
-    if not query_words:
-        return [compressed[0]["node_id"]] if compressed else []
-
-    scores = []
-    for item in compressed:
-        scope = f"{item['title'].lower()} {item['_search']}"
-        score = 0.0
-        for w in query_words:
-            pat = re.escape(w).replace(r'\-', r'[\s\-]') if '-' in w else re.escape(w)
-            hits = len(re.findall(rf'\b{pat}\b', scope))
-            score += hits * (4 if '-' in w else 1)
-            title_hits = len(re.findall(rf'\b{pat}\b', item['title'].lower()))
-            score += title_hits * (6 if '-' in w else 3)
-        if score > 0:
-            scores.append((score, item["node_id"]))
-
-    scores.sort(reverse=True)
-    if scores:
-        result = [scores[0][1]]
-        if len(scores) > 1 and scores[1][0] >= scores[0][0] * 0.5:
-            result.append(scores[1][1])
-        print(f"🎯 Keyword fallback → {result}")
-        return result
-
-    return [compressed[0]["node_id"]] if compressed else []
