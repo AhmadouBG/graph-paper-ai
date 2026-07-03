@@ -158,15 +158,16 @@ def _url_to_host(url: str) -> str:
     return f"{parsed.hostname}:{parsed.port}" if parsed.port else parsed.hostname
 
 
-def run_pipeline(pdf_path: str) -> tuple[list[dict], dict]:
+def run_pipeline(pdf_path: str) -> list[dict]:
     api_key = os.environ.get("LLAMA_CLOUD_API_KEY") or os.environ.get("LLAMACLOUD_API_KEY")
     if not api_key:
         st.error("LLAMA_CLOUD_API_KEY not set in your .env file.")
         st.stop()
 
-    with st.spinner(" Parsing document structure with LlamaCloud..."):
+    with st.spinner("📖 Parsing document with LlamaCloud..."):
         json_list = _parse_with_llamacloud(pdf_path, api_key)
 
+    # Build markdown with page markers
     markdown_chunks = []
     for page_data in json_list:
         page_num = page_data["page"]
@@ -174,23 +175,18 @@ def run_pipeline(pdf_path: str) -> tuple[list[dict], dict]:
         markdown_chunks.append(page_data.get("md", ""))
     markdown_content = "\n".join(markdown_chunks)
 
+    # Extract captions and inject as [Visual Component] lines
+    # so tree search can find "TABLE IV", "Fig. 3" etc. in node content
     caption_map = build_caption_map_from_markdown(markdown_content)
-    print("\n🔍 DEBUG CAPTION_MAP (table entries only):")
-    for page, caps in caption_map.items():
-        for cap in caps:
-            if "table" in cap["normalized"]:
-                print(f"  p.{page} → label='{cap['label']}' | normalized='{cap['normalized']}' | conf='{cap['confidence']}'")
 
-    # ✨ Table captions from caption_map (NEW — tables are text-only)
+    page_captions_text: dict[int, list[str]] = {}
     for page_num, caps in caption_map.items():
-        table_caps = [
+        page_captions_text[page_num] = [
             f"[Visual Component] Caption: {cap['full_caption']}"
             for cap in caps
-            if cap["normalized"].startswith("table")
         ]
-        if table_caps:
-            page_captions_text.setdefault(page_num, []).extend(table_caps)
 
+    # Rebuild markdown with injected captions
     markdown_chunks = []
     for page_data in json_list:
         page_num = page_data["page"]

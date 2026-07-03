@@ -35,129 +35,73 @@ def _extract_component_metadata(query: str) -> tuple[str | None, str | None, str
             
     return None, None, None
 
-def generate_answer(query: str, retrieved_nodes: list[dict], model: str, full_tree: list[dict] = None,
-                    page_image_map: dict = None) -> dict:
+def generate_answer(query: str, retrieved_nodes: list[dict], model: str) -> dict:
     context_list = []
     source_citations = []
-    ollama_images = []
 
-    is_visual_query = bool(
-        re.search(r'fig(?:ure)?|chart|image|graph|plot|table|show', query.lower())
-    )
-
-    target_type, target_num, target_raw = _extract_component_metadata(query)
-
-    # ── Build context from all retrieved nodes ────────────────────────────
     for node in retrieved_nodes:
-        content_caps = re.findall(r'\[Visual Component\] Caption:\s*(.*?)(?:\n|$)', node.get('content', ''))
-        print(f"   content captions: {content_caps}")
-        print(f"   target_{target_type}: {target_num}")
-        print(f"   is_visual_query: {is_visual_query}")
-        
-        full_node_content = node.get("content", "")
-        table_context_injection = ""
-        
-        # Injection de sécurité uniquement pour préserver les structures de tableaux volumineuses
-        if target_type == "table":
-            all_tables = re.findall(r'(<table\b[^>]*>.*?</table>)', full_node_content, re.DOTALL | re.IGNORECASE)
-            if all_tables:
-                table_context_injection = "\n\n[DETECTED TABLES]:\n" + "\n\n".join(all_tables)
-
-        truncated_content = full_node_content[:2500]
+        # Include full content up to 3000 chars — tables can be long
+        truncated_content = node.get("content", "")[:3000]
         pages_range = f"{node.get('page_start', '?')}-{node.get('page_end', '?')}"
-        final_chunk_content = truncated_content + table_context_injection
-        
         context_list.append(
-            f"[Pages: {pages_range} | Section: {node['title']}]\n{final_chunk_content}"
+            f"[Pages: {pages_range} | Section: {node['title']}]\n{truncated_content}"
         )
         source_citations.append(f"Section: '{node['title']}', Page {pages_range}")
 
-    # ── Find the target image ─────────────────────────────────────────────
-    image_found = False
-    if is_visual_query and target_num and target_type:
-        # STRATÉGIE HYBRIDE STRICTE :
-        # Si c'est une Figure ("fig"), on VEUT absolument trouver son image Base64.
-        if target_type == "fig":
-            # Pass 1: Recherche locale dans le nœud courant
-            for node in retrieved_nodes:
-                matched = _find_best_image_for_component(target_type, target_num, node)
-                if matched:
-                    ollama_images.append(matched)
-                    image_found = True
-                    print(f"🎯 Matched Figure {target_num} in retrieved node '{node['title']}'")
-                    break
+    context = "\n\n".join(context_list)
 
-            # Pass 2: Recherche globale dans tout l'arbre ou page_image_map
-            if not ollama_images and full_tree:
-                print(f"⚠️ Searching full tree for Figure {target_num}...")
-                matched = _find_component_globally(target_type, target_num, target_raw, full_tree, page_image_map or {})
-                if matched:
-                    ollama_images.append(matched)
-                    image_found = True
+    target_type, target_num, target_raw = _extract_component_metadata(query)
 
-        # Si c'est un tableau ("table"), on court-circuite pour utiliser uniquement le HTML textuel
-        elif target_type == "table":
-            print(f"ℹ️ Table query detected. Skipping image lookup to analyze text/HTML context.")
-            image_found = False
+    # Build Roman numeral hint for table queries
+    roman_hint = ""
+    if target_type == "table" and target_num:
+        roman_map = {
+            1:"I", 2:"II", 3:"III", 4:"IV", 5:"V",
+            6:"VI", 7:"VII", 8:"VIII", 9:"IX", 10:"X"
+        }
+        try:
+            roman_hint = f" (also written as TABLE {roman_map[int(target_num)]})"
+        except (ValueError, KeyError):
+            pass
 
-    raw_context = "\n\n".join(context_list)
+    if target_type and target_num:
+        generation_prompt = f"""You are an advanced AI assistant analyzing a research paper.
+The user wants information about {target_type.capitalize()} {target_num}{roman_hint}.
 
-    # ── Build the prompt ──────────────────────────────────────────────────
-    # Mode vision actif uniquement si on a récupéré l'image Base64 d'une FIGURE
-    if target_type == "fig" and ollama_images:
-        caption_hint = ""
-        for page_imgs in (page_image_map or {}).values():
-            for img in page_imgs:
-                lbl_norm = re.sub(r'[\s.]', '', img.get("label", "").lower())
-                if "fig" in lbl_norm and target_num in lbl_norm:
-                    cap = img.get("caption", "")
-                    if cap and cap != "Aucune légende trouvée":
-                        caption_hint = f"\nCaption: {cap}"
-                    break
-            if caption_hint: break
+INSTRUCTIONS:
+- Find the {target_type.capitalize()} {target_num}{roman_hint} in the context below
+- It may appear as HTML <table>...</table>, a markdown table, a mermaid diagram, or descriptive text
+- Extract and explain its contents clearly: describe headers, values, and conclusions
+- If you cannot find {target_type.capitalize()} {target_num} specifically, say so — do NOT describe a different {target_type}
 
-        generation_prompt = (
-            f"You are analysing a figure from a research paper.\n"
-            f"The attached image is Figure {target_num}.{caption_hint}\n\n"
-            f"User question: {query}\n\n"
-            f"Answer based only on what you see in the image. "
-            f"Be specific: describe axes, values, trends, and conclusions visible in Figure {target_num}."
-        )
-        print(f"🔬 Vision-only prompt for Figure {target_num}")
-    else:
-        # Mode texte : Idéal pour les Tableaux HTML et les requêtes textuelles classiques
-        context = raw_context
-        table_instruction = ""
-        if target_type == "table":
-            table_instruction = f"Look carefully for any markdown or HTML <table>...</table> structure within the context that corresponds to Table {target_num} (which might be written as Table {target_raw.upper()} in Roman numerals).\n"
-
-        generation_prompt = f"""You are an advanced AI assistant running locally.
-Answer the user query based strictly on the context and any attached data below.
-{table_instruction}
-FORMATTING RULES:
-- When listing items, always put each item on its own line with a dash: "- Item"
-- Never run list items together separated only by commas or colons
-- Keep answers concise and well-structured
-- Use **bold** for key terms or section headers
+FORMATTING:
+- Use **bold** for column/header names
+- Present data row by row when relevant
+- Keep the answer concise and accurate
 
 Query: {query}
 
 Context:
 {context}"""
 
-    message_payload = {"role": "user", "content": generation_prompt}
-
-    if ollama_images:
-        print(f"🖼️ Attaching {len(ollama_images)} image(s) to multimodal context.")
-        message_payload["images"] = ollama_images
     else:
+        generation_prompt = f"""You are an advanced AI assistant analyzing a research paper.
+Answer the user query based strictly on the context below.
 
-        print("📝 Text query — no images attached.")
+FORMATTING RULES:
+- When listing items, put each on its own line with a dash: "- Item"
+- Use **bold** for key terms or section headers
+- Keep answers concise and well-structured
+
+Query: {query}
+
+Context:
+{context}"""
 
     response = ollama.chat(
         model=model,
-        messages=[message_payload],
-        options={"num_ctx": 4096, "num_predict": 512, "temperature": 0.0}
+        messages=[{"role": "user", "content": generation_prompt}],
+        options={"num_ctx": 8192, "num_predict": 1024, "temperature": 0.1}
     )
 
     return {
