@@ -7,10 +7,9 @@ import ollama
 import streamlit as st
 from dotenv import load_dotenv
 
-from src.extraction import extract_images_with_captions, build_page_image_map
 from src.extraction.parser import _build_pure_text_tree, _parse_with_llamacloud
 from src.pipeline import vectorless_rag_no_loss, print_tree, get_total_pages
-from src.extraction.extract_caption import build_caption_map_from_markdown, match_images_to_captions
+from src.extraction.extract_caption import build_caption_map_from_markdown
 
 load_dotenv()
 
@@ -165,12 +164,7 @@ def run_pipeline(pdf_path: str) -> tuple[list[dict], dict]:
         st.error("LLAMA_CLOUD_API_KEY not set in your .env file.")
         st.stop()
 
-    with st.spinner("🔬 Extracting figures with PyMuPDF..."):
-        liste_images_locales = extract_images_with_captions(pdf_path)
-
-    raw_page_image_map = build_page_image_map(liste_images_locales)
-
-    with st.spinner("📖 Parsing document structure with LlamaCloud..."):
+    with st.spinner(" Parsing document structure with LlamaCloud..."):
         json_list = _parse_with_llamacloud(pdf_path, api_key)
 
     markdown_chunks = []
@@ -186,25 +180,8 @@ def run_pipeline(pdf_path: str) -> tuple[list[dict], dict]:
         for cap in caps:
             if "table" in cap["normalized"]:
                 print(f"  p.{page} → label='{cap['label']}' | normalized='{cap['normalized']}' | conf='{cap['confidence']}'")
-    page_image_map = match_images_to_captions(raw_page_image_map, caption_map)
-    print("\n🔍 DEBUG page_image_map after match:")
-    for page, imgs in page_image_map.items():
-        for img in imgs:
-            print(f"  p.{page} label='{img.get('label','')}' cap='{img.get('caption','')[:50]}'")
-    # After building caption_map and page_image_map, build page_captions_text
-    page_captions_text = {}
 
-    # Image captions (existing)
-    for page_num, imgs in page_image_map.items():
-        caps = [
-            f"[Visual Component] Caption: {img['caption']}"
-            for img in imgs
-            if img["caption"] != "Aucune légende trouvée"
-        ]
-        if caps:
-            page_captions_text.setdefault(page_num, []).extend(caps)
-
-    # ✨ Table captions from caption_map (NEW — tables are text-only, not in page_image_map)
+    # ✨ Table captions from caption_map (NEW — tables are text-only)
     for page_num, caps in caption_map.items():
         table_caps = [
             f"[Visual Component] Caption: {cap['full_caption']}"
@@ -224,9 +201,9 @@ def run_pipeline(pdf_path: str) -> tuple[list[dict], dict]:
     markdown_content = "\n".join(markdown_chunks)
 
     with st.spinner("🌲 Building document tree..."):
-        tree = _build_pure_text_tree(markdown_content, page_image_map)
+        tree = _build_pure_text_tree(markdown_content)
 
-    return tree, page_image_map
+    return tree
 
 
 def check_ollama(model: str, url: str) -> bool:
@@ -245,31 +222,11 @@ def count_nodes(nodes):
             c += count_nodes(n["nodes"])
     return c
 
-
-def collect_images(nodes):
-    seen = set()
-    imgs = []
-    def walk(ns):
-        for n in ns:
-            for img in n.get("base64_images", []):
-                b64 = img["base64"] if isinstance(img, dict) else img
-                if b64 not in seen:
-                    seen.add(b64)
-                    caption = img.get("caption", "") if isinstance(img, dict) else ""
-                    label = img.get("label", "") if isinstance(img, dict) else ""
-                    imgs.append((n["title"], n.get("page_start", "?"), b64, caption, label))
-            if n.get("nodes"):
-                walk(n["nodes"])
-    walk(nodes)
-    return imgs
-
-
 # ── Session state ─────────────────────────────────────────────────────────────
 for key, default in [
     ("tree", None),
     ("messages", []),
     ("pdf_name", ""),
-    ("page_image_map", {}),
     ("processing", False),
 ]:
     if key not in st.session_state:
@@ -301,8 +258,8 @@ with st.sidebar:
     if st.session_state.tree:
         st.divider()
         if st.button("📂 Load new document", use_container_width=True):
-            for key in ["tree", "messages", "pdf_name", "page_image_map"]:
-                st.session_state[key] = None if key == "tree" else ([] if key == "messages" else {} if key == "page_image_map" else "")
+            for key in ["tree", "messages", "pdf_name"]:
+                st.session_state[key] = None if key == "tree" else ([] if key == "messages" else "")
             st.rerun()
         st.divider()
         
@@ -359,10 +316,9 @@ if not st.session_state.tree:
                 try:
                     progress = st.progress(0, text="Starting…")
                     progress.progress(10, text="Extracting figures…")
-                    tree, page_image_map = run_pipeline(tmp_path)
+                    tree = run_pipeline(tmp_path)
                     progress.progress(100, text="Ready!")
                     st.session_state.tree = tree
-                    st.session_state.page_image_map = page_image_map
                     st.session_state.pdf_name = uploaded_file.name
                     st.session_state.messages = []
                     st.rerun()
@@ -444,7 +400,6 @@ else:
                         prompt,
                         st.session_state.tree,
                         model,
-                        page_image_map=st.session_state.page_image_map,
                     )
                 st.markdown(result["answer"],  unsafe_allow_html=False )
                 if result.get("sources"):

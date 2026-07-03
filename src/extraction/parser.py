@@ -64,9 +64,6 @@ def _build_pure_text_tree(markdown_text: str, page_image_map: dict[int, list[dic
             "page_start": page,
             "page_end": page,
             "content_lines": [],
-            "base64_images": [],
-            "image_captions": [],
-            "image_labels": [],
             "nodes": [],
         }
 

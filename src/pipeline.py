@@ -41,4 +41,4 @@ def vectorless_rag_no_loss(query: str, tree: list[dict], model: str, page_image_
     retrieved_nodes = retrieve_nodes(selected_ids, tree)
 
     # 3. Generator
-    return generate_answer(query, retrieved_nodes, model, full_tree=tree, page_image_map=page_image_map or {})
+    return generate_answer(query, retrieved_nodes, model, full_tree=tree)
