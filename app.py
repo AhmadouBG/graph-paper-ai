@@ -36,6 +36,17 @@ st.markdown("""
 /* Hide default header */
 [data-testid="stHeader"] { background: transparent; }
 
+/* st.markdown CSS */
+[data-testid="stChatMessage"] p,
+[data-testid="stChatMessage"] li {
+    line-height: 1.7;
+    word-break: break-word;
+}
+[data-testid="stChatMessage"] ul,
+[data-testid="stChatMessage"] ol {
+    padding-left: 1.5rem;
+    margin: 0.5rem 0;
+}
 /* Upload zone */
 .upload-zone {
     border: 2px dashed #2a3347;
@@ -170,12 +181,20 @@ def run_pipeline(pdf_path: str) -> tuple[list[dict], dict]:
     markdown_content = "\n".join(markdown_chunks)
 
     caption_map = build_caption_map_from_markdown(markdown_content)
+    print("\n🔍 DEBUG CAPTION_MAP (table entries only):")
+    for page, caps in caption_map.items():
+        for cap in caps:
+            if "table" in cap["normalized"]:
+                print(f"  p.{page} → label='{cap['label']}' | normalized='{cap['normalized']}' | conf='{cap['confidence']}'")
     page_image_map = match_images_to_captions(raw_page_image_map, caption_map)
     print("\n🔍 DEBUG page_image_map after match:")
     for page, imgs in page_image_map.items():
         for img in imgs:
             print(f"  p.{page} label='{img.get('label','')}' cap='{img.get('caption','')[:50]}'")
+    # After building caption_map and page_image_map, build page_captions_text
     page_captions_text = {}
+
+    # Image captions (existing)
     for page_num, imgs in page_image_map.items():
         caps = [
             f"[Visual Component] Caption: {img['caption']}"
@@ -183,7 +202,17 @@ def run_pipeline(pdf_path: str) -> tuple[list[dict], dict]:
             if img["caption"] != "Aucune légende trouvée"
         ]
         if caps:
-            page_captions_text[page_num] = caps
+            page_captions_text.setdefault(page_num, []).extend(caps)
+
+    # ✨ Table captions from caption_map (NEW — tables are text-only, not in page_image_map)
+    for page_num, caps in caption_map.items():
+        table_caps = [
+            f"[Visual Component] Caption: {cap['full_caption']}"
+            for cap in caps
+            if cap["normalized"].startswith("table")
+        ]
+        if table_caps:
+            page_captions_text.setdefault(page_num, []).extend(table_caps)
 
     markdown_chunks = []
     for page_data in json_list:
@@ -417,7 +446,7 @@ else:
                         model,
                         page_image_map=st.session_state.page_image_map,
                     )
-                st.markdown(result["answer"])
+                st.markdown(result["answer"],  unsafe_allow_html=False )
                 if result.get("sources"):
                     with st.expander("📍 Sources", expanded=False):
                         for s in result["sources"]:

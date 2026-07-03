@@ -35,7 +35,7 @@ def vectorless_rag_no_loss(query: str, tree: list[dict], model: str, page_image_
     """
     # 1. Tree Search
     print("🔍 Executing LLM Tree Search...")
-    selected_ids = llm_tree_search_ollama(query, tree, model)
+    selected_ids = llm_tree_search_ollama(query, tree)
 
     # 2. Retriever
     retrieved_nodes = retrieve_nodes(selected_ids, tree)

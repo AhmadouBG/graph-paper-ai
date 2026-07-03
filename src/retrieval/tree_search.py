@@ -32,8 +32,8 @@ def _safe_parse_json(raw: str) -> dict:
 
     raise ValueError("Could not parse JSON.")
 
+
 def _tokenize(text: str) -> list[str]:
-    """Simple tokenizer that preserves hyphenated compounds."""
     text = text.lower()
     tokens = re.findall(r'[a-z](?:-[a-z0-9]+)+|[a-z0-9]+', text)
     stop_words = {
@@ -44,18 +44,56 @@ def _tokenize(text: str) -> list[str]:
     return [t for t in tokens if t not in stop_words and (len(t) > 2 or '-' in t)]
 
 
+def _roman_to_int(s: str) -> int | None:
+    roman = {'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100, 'D': 500, 'M': 1000}
+    s = s.upper().strip()
+    if not s or not all(c in roman for c in s):
+        return None
+    result = 0
+    for i in range(len(s)):
+        if i + 1 < len(s) and roman[s[i]] < roman[s[i + 1]]:
+            result -= roman[s[i]]
+        else:
+            result += roman[s[i]]
+    return result
+
+
+def _extract_visual_target(query: str) -> tuple[str | None, str | None]:
+    """
+    Returns (fig_num, table_num) as arabic numeral strings.
+    e.g. "explain figure 5"  → ("5", None)
+         "give me table III" → (None, "3")
+         "show table 4"      → (None, "4")
+    """
+    q = query.lower()
+
+    fig_match = re.search(r'\bfig(?:ure)?s?\.?\s*([ivxlcdm]+|\d+[a-z]?)', q)
+    if fig_match:
+        raw = fig_match.group(1).strip('.')
+        if raw.isdigit() or (len(raw) > 1 and raw[-1].isalpha() and raw[:-1].isdigit()):
+            return raw, None
+        num = _roman_to_int(raw.upper())
+        return (str(num) if num else raw), None
+
+    table_match = re.search(r'\btable\s*\.?\s*([ivxlcdm]+|\d+[a-z]?)', q)
+    if table_match:
+        raw = table_match.group(1).strip('.')
+        if raw.isdigit():
+            return None, raw
+        num = _roman_to_int(raw.upper())
+        return None, (str(num) if num else raw)
+
+    return None, None
+
+
 def _bm25_fallback(query: str, compressed: list[dict]) -> list[str]:
-    """
-    BM25-ranked fallback. Better than raw keyword matching because it
-    normalizes for node length and weights rare terms (e.g. 'z-score') higher.
-    """
+    """BM25 ranked retrieval — only for text queries, not figure/table queries."""
     if not compressed:
         return []
 
-    # Build corpus: title gets repeated 3x to weight it like before
     corpus = []
     for item in compressed:
-        title_tokens = _tokenize(item["title"]) * 3   # title weight
+        title_tokens = _tokenize(item["title"]) * 3
         body_tokens = _tokenize(item["_search"])
         corpus.append(title_tokens + body_tokens)
 
@@ -66,21 +104,18 @@ def _bm25_fallback(query: str, compressed: list[dict]) -> list[str]:
         return [compressed[0]["node_id"]]
 
     scores = bm25.get_scores(query_tokens)
-    ranked = sorted(
-        zip(scores, compressed), key=lambda x: x[0], reverse=True
-    )
+    ranked = sorted(zip(scores, compressed), key=lambda x: x[0], reverse=True)
 
     if ranked[0][0] <= 0:
-        # No real match — fall back to first node
         return [compressed[0]["node_id"]]
 
     result = [ranked[0][1]["node_id"]]
-    # Include second node only if it scores at least half the top score
     if len(ranked) > 1 and ranked[1][0] >= ranked[0][0] * 0.5:
         result.append(ranked[1][1]["node_id"])
 
-    print(f"🎯 BM25 fallback → {result} (top score: {ranked[0][0]:.2f})")
+    print(f"🎯 BM25 → {result} (top score: {ranked[0][0]:.2f})")
     return result
+
 
 def _call_ollama_with_timeout(model: str, prompt: str, timeout_seconds: int = 15) -> str | None:
     result = [None]
@@ -146,23 +181,69 @@ def llm_tree_search_ollama(query: str, tree: list[dict]) -> list[str]:
             out.append(entry)
             if n.get("nodes"):
                 out.extend(compress(n["nodes"]))
+            print(f"🔍 DEBUG compress()")
+        # At the end of compress(), before return:
+        for item in out:
+            if item["figure_captions"]:
+                print(f"  node {item['node_id']} '{item['title']}' → captions: {item['figure_captions']}")
         return out
 
     compressed = compress(tree)
 
-    # ── 1. Figure shortcut: skip LLM, match caption directly ─────────────
-    fig_match = re.search(r'fig(?:ure)?\.?\s*(\d+)', query.lower())
-    if fig_match:
-        target_num = fig_match.group(1)
+    # ── 1. Figure / Table shortcut ────────────────────────────────────────
+    fig_num, table_num = _extract_visual_target(query)
+    print(f"🔍 DEBUG _extract_visual_target: fig_num={fig_num}, table_num={table_num}")
+    target_num = fig_num or table_num
+    is_fig = fig_num is not None
+
+    if target_num:
+        prefix = "fig" if is_fig else "table"
+        roman_val = _roman_to_int(target_num.upper())
+        arabic = str(roman_val) if roman_val else target_num
+
+        # Pass A: match against indexed captions (strict)
         for item in compressed:
             for caption in item["figure_captions"]:
-                normalized = re.sub(r'[.\s]', '', caption.lower())
-                if re.search(rf'fig(?:ure)?{re.escape(target_num)}\b', normalized):
-                    print(f"🎯 Figure shortcut → node {item['node_id']} (caption: {caption})")
+                normalized = re.sub(r'[\s.\-,:]', '', caption.lower())
+                # Must have prefix immediately followed by number (no gap)
+                if re.search(rf'{prefix}(?:ure)?s?{re.escape(arabic)}(?!\d)', normalized):
+                    print(f"🎯 Pass A → node {item['node_id']} (caption: {caption[:60]})")
                     return [item["node_id"]]
-        print(f"⚠️ No caption match for Figure {target_num}, trying LLM.")
 
-    # ── 2. LLM tree search (with timeout) ────────────────────────────────
+        # Pass B: strict body text — prefix must be ADJACENT to number
+        # Pass B: strict body search including Roman numeral form
+        print(f"⚠️ {prefix.title()} {arabic} not in captions. Strict body search...")
+
+        roman_map = {
+            1:"I", 2:"II", 3:"III", 4:"IV", 5:"V",
+            6:"VI", 7:"VII", 8:"VIII", 9:"IX", 10:"X"
+        }
+        try:
+            arabic_int = int(arabic)
+            roman_form = roman_map.get(arabic_int, "")
+        except ValueError:
+            roman_form = ""
+
+        strict_patterns = [
+            rf'\b{prefix}(?:ure)?s?\.?\s*{re.escape(arabic)}\b',
+        ]
+        if roman_form:
+            strict_patterns.append(
+                rf'\b{prefix}(?:ure)?s?\.?\s*{re.escape(roman_form)}\b'
+            )
+
+        for item in compressed:
+            body = item["_search"]
+            for pattern in strict_patterns:
+                if re.search(pattern, body, re.IGNORECASE):
+                    print(f"🔍 Pass B → node {item['node_id']} '{item['title']}'")
+                    return [item["node_id"]]
+
+        print(f"❌ {prefix.title()} {arabic} not found. Falling back to BM25.")
+        return _bm25_fallback(query, compressed)
+
+
+    # ── 2. LLM tree search ────────────────────────────────────────────────
     tree_for_prompt = [
         {k: v for k, v in item.items() if k != "_search"}
         for item in compressed
@@ -186,7 +267,7 @@ Reply ONLY in this exact JSON format, no markdown, no extra text:
   "node_list": ["node_id1", "node_id2"]
 }}"""
 
-    content = _call_ollama_with_timeout(TREE_SEARCH_MODEL, prompt)
+    content = _call_ollama_with_timeout(TREE_SEARCH_MODEL, prompt, timeout_seconds=15)
 
     if content:
         try:
@@ -195,14 +276,13 @@ Reply ONLY in this exact JSON format, no markdown, no extra text:
             node_list = [nid for nid in result.get("node_list", []) if nid in valid_ids]
             if node_list:
                 print(f"\n{'='*60}")
-                print(f"🧠 LLM reasoning: {result.get('thinking', 'N/A')}")
-                print(f"✅ Selected nodes: {node_list}")
+                print(f"🧠 LLM: {result.get('thinking', 'N/A')}")
+                print(f"✅ Selected: {node_list}")
                 return node_list
             print("⚠️ LLM returned no valid node IDs.")
         except Exception as e:
             print(f"⚠️ Parse error: {e}")
 
-    # ── 3. Keyword fallback ───────────────────────────────────────────────
-    print("↩️ Falling back to keyword scorer.")
+    # ── 3. BM25 fallback ─────────────────────────────────────────────────
+    print("↩️ Falling back to BM25.")
     return _bm25_fallback(query, compressed)
-
