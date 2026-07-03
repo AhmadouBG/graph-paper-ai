@@ -44,8 +44,8 @@ def _parse_with_llamacloud(pdf_path: str, api_key: str) -> list[dict]:
         for p in result.markdown.pages
         if p.success
     ]
-
-def _build_pure_text_tree(markdown_text: str, page_image_map: dict[int, list[dict]]) -> list[dict]:
+def _build_pure_text_tree(markdown_text: str) -> list[dict]:
+    """Build document tree from markdown. Pure text — no image extraction."""
     text_with_page_tags = re.sub(r'---\s*Page\s*(\d+)\s*---', r'[[PAGE_\1]]', markdown_text)
     lines = text_with_page_tags.split("\n")
 
@@ -54,10 +54,7 @@ def _build_pure_text_tree(markdown_text: str, page_image_map: dict[int, list[dic
     current_page = 1
     node_counter = 0
 
-    MIN_IMAGE_B64_LEN = 5000
-
     def make_node(node_id: str, title: str, page: int) -> dict:
-        # No image assignment here anymore — done later in finalize_tree
         return {
             "node_id": node_id,
             "title": title,
@@ -84,7 +81,6 @@ def _build_pure_text_tree(markdown_text: str, page_image_map: dict[int, list[dic
         if heading_match:
             level = len(heading_match.group(1))
             title = heading_match.group(2).strip()
-
             new_node = make_node(f"{node_counter:04d}", title, current_page)
             node_counter += 1
 
@@ -95,28 +91,10 @@ def _build_pure_text_tree(markdown_text: str, page_image_map: dict[int, list[dic
                 root_nodes.append(new_node)
             else:
                 stack[-1]["node"]["nodes"].append(new_node)
-
             stack.append({"level": level, "node": new_node})
         else:
             if stack and line.strip():
                 stack[-1]["node"]["content_lines"].append(line)
-
-    claimed_pages: set[int] = set()
-
-    def assign_images_to_node(n: dict) -> None:
-        """Assign all unclaimed real images within this node's page range."""
-        start = n["page_start"]
-        end = n.get("page_end", start)
-        for page in range(start, end + 1):
-            if page in claimed_pages:
-                continue
-            imgs = page_image_map.get(page, [])
-            real_imgs = [img for img in imgs if len(img.get("base64", "")) >= MIN_IMAGE_B64_LEN]
-            if real_imgs:
-                claimed_pages.add(page)
-                n["base64_images"].extend(img["base64"] for img in real_imgs)
-                n["image_captions"].extend(img["caption"] for img in real_imgs)
-                n["image_labels"].extend(img["label"] for img in real_imgs)
 
     def finalize_tree(nodes: list[dict], next_start: int | None = None) -> None:
         for i, n in enumerate(nodes):
@@ -130,17 +108,4 @@ def _build_pure_text_tree(markdown_text: str, page_image_map: dict[int, list[dic
                 finalize_tree(n["nodes"], n["page_end"])
 
     finalize_tree(root_nodes)
-
-    # ✨ Now that page_end is correctly set everywhere, assign images by range
-    def walk_assign(nodes):
-        for n in nodes:
-            assign_images_to_node(n)
-            if n.get("nodes"):
-                walk_assign(n["nodes"])
-
-    walk_assign(root_nodes)
-
     return root_nodes
- 
-
-
