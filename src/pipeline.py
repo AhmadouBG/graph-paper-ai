@@ -25,20 +25,39 @@ def get_total_pages(nodes: list[dict]) -> int:
                 walk(n["nodes"])
     walk(nodes)
     return max_page
-
-def vectorless_rag_no_loss(query: str, tree: list[dict], model: str, page_image_map: dict = None) -> dict:
+def vectorless_rag_no_loss(
+    query: str,
+    tree: list[dict],
+    model: str = "qwen2.5:3b",  # ✨ Par défaut Ollama local pour la recherche
+    caption_index: dict = None
+) -> str:  # Retours synchronisés avec la chaîne de caractères brute de GPT-4o
     """
-    Full RAG pipeline:
-      1. Tree Search  — select relevant node IDs with an LLM
-      2. Retriever    — fetch the full node content from the tree
-      3. Generator    — build context and call Ollama for the final answer
+    Pipeline RAG hiérarchique complet :
+      1. Tree Search  — Sélectionne les IDs des nœuds pertinents via Ollama (avec sécurité Regex & Anti-citations)
+      2. Retriever    — Récupère le contenu complet des nœuds dans l'arbre
+      3. Generator    — Découpe la tranche ciblée et génère la réponse finale via GPT-4o
     """
-    # 1. Tree Search
+    # 1. Tree Search (Recherche hiérarchique locale ultra-rapide)
     print("🔍 Executing LLM Tree Search...")
-    selected_ids = llm_tree_search_ollama(query, tree)
+    # ✅ CORRIGÉ : On passe 'caption_index' pour que les Pass A et Pass B fonctionnent !
+    selected_ids = llm_tree_search_ollama(
+        query=query, 
+        tree=tree, 
+        model=model, 
+        caption_index=caption_index or {}
+    )
 
-    # 2. Retriever
+    # 2. Retriever (Extraction récursive sécurisée des nœuds)
+    print("📄 Retrieving full nodes content...")
     retrieved_nodes = retrieve_nodes(selected_ids, tree)
 
-    # 3. Generator
-    return generate_answer(query, retrieved_nodes, model, full_tree=tree)
+    # 3. Generator (Génération de la réponse finale épurée et isolée)
+    print("🧠 Generating grounded answer via OpenAI...")
+    # ✅ CORRIGÉ : Utilisation du modèle de génération OpenAI configuré
+    return generate_answer(
+         query=query,
+         nodes=retrieved_nodes,
+         model=model,
+         caption_index=caption_index or {}
+    )
+

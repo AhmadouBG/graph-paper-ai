@@ -2,7 +2,7 @@ import logging
 import os
 import tempfile
 from urllib.parse import urlparse
-
+import re
 import ollama
 import streamlit as st
 from dotenv import load_dotenv
@@ -149,7 +149,7 @@ hr { border-color: #e2e8f0; }
 </style>
 """, unsafe_allow_html=True)
 
-DEFAULT_MODEL = "qwen2.5vl:3b"
+DEFAULT_MODEL = "qwen2.5:3b"
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
 
 
@@ -157,8 +157,62 @@ def _url_to_host(url: str) -> str:
     parsed = urlparse(url)
     return f"{parsed.hostname}:{parsed.port}" if parsed.port else parsed.hostname
 
+def inject_captions_into_markdown(
+    markdown_content: str,
+    caption_map: dict[int, list[dict]],
+) -> str:
+    """
+    Inject [Visual Component] markers directly adjacent to their captions
+    in the markdown text, so _build_pure_text_tree assigns them to the
+    correct node regardless of page boundaries.
 
-def run_pipeline(pdf_path: str) -> list[dict]:
+    - FIGURE: inject BEFORE the caption line
+              (figure content is above, caption is below)
+    - TABLE:  inject BEFORE the caption line  
+              (table caption is above, content follows)
+    Both get injected before the caption so the marker lands in the same
+    node as the caption text itself.
+    """
+    lines = markdown_content.split('\n')
+    result_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Check if this line is a figure or table caption
+        matched_cap = None
+        cap_type = None
+
+        for page_caps in caption_map.values():
+            for cap in page_caps:
+                # Match this line against the known caption
+                cap_normalized = re.sub(r'\s+', ' ', cap['full_caption'].strip())
+                line_normalized = re.sub(r'\s+', ' ', stripped)
+
+                # Use the label as a reliable anchor (shorter, more stable)
+                label = cap['label']  # e.g. "Figure 4", "Table 3"
+                if re.search(
+                    re.escape(label),
+                    line_normalized,
+                    re.IGNORECASE
+                ):
+                    matched_cap = cap
+                    cap_type = "fig" if cap["normalized"].startswith("fig") else "table"
+                    break
+            if matched_cap:
+                break
+
+        if matched_cap:
+            # Inject the [Visual Component] marker before this caption line
+            result_lines.append(
+                f"[Visual Component] Caption: {matched_cap['full_caption']}"
+            )
+
+        result_lines.append(line)
+
+    return '\n'.join(result_lines)
+
+def run_pipeline(pdf_path: str) -> tuple[list[dict], dict[str, str]]:
     api_key = os.environ.get("LLAMA_CLOUD_API_KEY") or os.environ.get("LLAMACLOUD_API_KEY")
     if not api_key:
         st.error("LLAMA_CLOUD_API_KEY not set in your .env file.")
@@ -167,7 +221,6 @@ def run_pipeline(pdf_path: str) -> list[dict]:
     with st.spinner("📖 Parsing document with LlamaCloud..."):
         json_list = _parse_with_llamacloud(pdf_path, api_key)
 
-    # Build markdown with page markers
     markdown_chunks = []
     for page_data in json_list:
         page_num = page_data["page"]
@@ -175,31 +228,28 @@ def run_pipeline(pdf_path: str) -> list[dict]:
         markdown_chunks.append(page_data.get("md", ""))
     markdown_content = "\n".join(markdown_chunks)
 
-    # Extract captions and inject as [Visual Component] lines
-    # so tree search can find "TABLE IV", "Fig. 3" etc. in node content
     caption_map = build_caption_map_from_markdown(markdown_content)
 
-    page_captions_text: dict[int, list[str]] = {}
-    for page_num, caps in caption_map.items():
-        page_captions_text[page_num] = [
-            f"[Visual Component] Caption: {cap['full_caption']}"
-            for cap in caps
-        ]
+    # ✨ CORRECTIF : Initialisation et construction du dictionnaire plat caption_index
+    # Il va transformer les données en : {"fig4": "Fig. 4 full text...", "table3": "Table 3 full text..."}
+    caption_index: dict[str, str] = {}
+    for page_num, page_caps in caption_map.items():
+        for cap in page_caps:
+            # Utilisez la clé normalisée ("fig4", "table3") générée par extract_cap.py
+            key = cap["normalized"]
+            caption_index[key] = cap["full_caption"]
 
-    # Rebuild markdown with injected captions
-    markdown_chunks = []
-    for page_data in json_list:
-        page_num = page_data["page"]
-        markdown_chunks.append(f"--- Page {page_num} ---")
-        if page_num in page_captions_text:
-            markdown_chunks.append("\n".join(page_captions_text[page_num]))
-        markdown_chunks.append(page_data.get("md", ""))
-    markdown_content = "\n".join(markdown_chunks)
-
+    # Injection des marqueurs textuels dans le markdown pour l'arbre
+    markdown_content_with_captions = inject_captions_into_markdown(
+        markdown_content, caption_map
+    )
+    
     with st.spinner("🌲 Building document tree..."):
-        tree = _build_pure_text_tree(markdown_content)
+        tree = _build_pure_text_tree(markdown_content_with_captions)
 
-    return tree
+    # ✅ Désormais caption_index existe et est correctement retourné !
+    return tree, caption_index
+
 
 
 def check_ollama(model: str, url: str) -> bool:
@@ -223,6 +273,7 @@ for key, default in [
     ("tree", None),
     ("messages", []),
     ("pdf_name", ""),
+    ("caption_index", {}),  # ✨ added
     ("processing", False),
 ]:
     if key not in st.session_state:
@@ -253,9 +304,15 @@ with st.sidebar:
 
     if st.session_state.tree:
         st.divider()
+        # ── Sidebar: Load new document button ────────────────────────────────────────
         if st.button("📂 Load new document", use_container_width=True):
-            for key in ["tree", "messages", "pdf_name"]:
-                st.session_state[key] = None if key == "tree" else ([] if key == "messages" else "")
+            for key in ["tree", "messages", "pdf_name", "caption_index"]:  # ✨ added caption_index
+                st.session_state[key] = (
+                    None if key == "tree"
+                    else [] if key == "messages"
+                    else {} if key == "caption_index"  # ✨ added
+                    else ""
+                )
             st.rerun()
         st.divider()
         
@@ -309,12 +366,14 @@ if not st.session_state.tree:
                     tmp.write(uploaded_file.getvalue())
                     tmp_path = tmp.name
 
+                # ── Upload handler ────────────────────────────────────────────────────────────
                 try:
                     progress = st.progress(0, text="Starting…")
-                    progress.progress(10, text="Extracting figures…")
-                    tree = run_pipeline(tmp_path)
+                    progress.progress(10, text="Parsing document…")
+                    tree, caption_index = run_pipeline(tmp_path)  # ✨ unpack both
                     progress.progress(100, text="Ready!")
                     st.session_state.tree = tree
+                    st.session_state.caption_index = caption_index  # ✨ store it
                     st.session_state.pdf_name = uploaded_file.name
                     st.session_state.messages = []
                     st.rerun()
@@ -354,7 +413,6 @@ else:
 
     # Welcome message if no history
     if not st.session_state.messages:
-        fig_count = len(collect_images(st.session_state.tree))
         node_count = count_nodes(st.session_state.tree)
         st.markdown(
             f"""<div style='border:1px solid #e2e8f0;
@@ -362,9 +420,7 @@ else:
             <div style='color:#4f8ef7;font-weight:600;margin-bottom:0.4rem'>
             ✅ {st.session_state.pdf_name} is ready</div>
             <div style='color:#6b7a99;font-size:0.875rem'>
-            Found <b style='color:#272829'>{node_count} sections</b> and
-            <b style='color:#272829'>{fig_count} figures</b>.
-            Ask me anything about this document.</div>
+            Found <b style='color:#272829'>{node_count} sections</b>. Ask me anything about this document.</div>
             </div>""",
             unsafe_allow_html=True,
         )
@@ -391,11 +447,13 @@ else:
                 st.markdown(prompt)
 
             with st.chat_message("assistant"):
+                # ── Chat input handler ────────────────────────────────────────────────────────
                 with st.spinner("Thinking…"):
                     result = vectorless_rag_no_loss(
                         prompt,
                         st.session_state.tree,
                         model,
+                        caption_index=st.session_state.caption_index,
                     )
                 st.markdown(result["answer"],  unsafe_allow_html=False )
                 if result.get("sources"):
