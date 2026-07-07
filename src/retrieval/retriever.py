@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-
 def retrieve_nodes(selected_ids: list[str], tree: list[dict]) -> list[dict]:
     """
-    Recursively walks the tree and returns the full node dicts
-    matching the selected IDs. Falls back to the root node if nothing is found.
+    Parcourt l'arbre de manière récursive, extrait les nœuds et les RE-TRIE 
+    impérativement selon leur ordre d'apparition original (chronologique) 
+    dans le document. Élimine également les doublons et les nœuds vides.
     """
     def find_nodes(nodes: list[dict], target_ids: list[str]) -> list[dict]:
         found = []

@@ -1,21 +1,22 @@
 from __future__ import annotations
 
+# Importation de vos modules corrigés
 from src.retrieval.tree_search import llm_tree_search_ollama
 from src.retrieval.retriever import retrieve_nodes
-from src.query.generator import generate_answer
-
+from src.query.generator import generate_answer  # ✨ Changé pour la version Ollama
 
 def print_tree(nodes: list[dict], indent: int = 0) -> None:
-    """Recursively print tree titles for a visual overview."""
+    """Affiche récursivement les titres de l'arbre pour un aperçu visuel."""
     for node in nodes:
         prefix = "  " * indent + ("└─ " if indent > 0 else "")
-        page = node.get("page_index") or node.get("page_start") or "?"
+        # Utilisation de la clé officielle définie dans le parseur
+        page = node.get("page_start") or "?"
         print(f"{prefix}[{node['node_id']}] {node['title']}  (p.{page})")
         if node.get("nodes"):
             print_tree(node["nodes"], indent + 1)
 
 def get_total_pages(nodes: list[dict]) -> int:
-    """Walk entire tree and return the highest page_end found."""
+    """Parcourt l'arbre complet et retourne la page de fin la plus élevée."""
     max_page = 1
     def walk(ns):
         nonlocal max_page
@@ -25,39 +26,48 @@ def get_total_pages(nodes: list[dict]) -> int:
                 walk(n["nodes"])
     walk(nodes)
     return max_page
+
 def vectorless_rag_no_loss(
     query: str,
     tree: list[dict],
-    model: str = "qwen2.5:3b",  # ✨ Par défaut Ollama local pour la recherche
-    caption_index: dict = None
-) -> str:  # Retours synchronisés avec la chaîne de caractères brute de GPT-4o
+    model: str = "qwen2.5:3b"  # 100% local par défaut
+) -> dict:  # Retourne un dictionnaire avec la réponse et le raisonnement pour l'UI Streamlit
     """
-    Pipeline RAG hiérarchique complet :
-      1. Tree Search  — Sélectionne les IDs des nœuds pertinents via Ollama (avec sécurité Regex & Anti-citations)
-      2. Retriever    — Récupère le contenu complet des nœuds dans l'arbre
-      3. Generator    — Découpe la tranche ciblée et génère la réponse finale via GPT-4o
+    Pipeline Vectorless RAG hiérarchique complet :
+      1. Tree Search  — Sélectionne les IDs des nœuds via Ollama (Sortie JSON)
+      2. Retriever    — Récupère et déduplique le contenu complet des nœuds
+      3. Generator    — Synthétise le contexte et génère la réponse ancrée via Ollama
     """
-    # 1. Tree Search (Recherche hiérarchique locale ultra-rapide)
-    print("🔍 Executing LLM Tree Search...")
-    # ✅ CORRIGÉ : On passe 'caption_index' pour que les Pass A et Pass B fonctionnent !
-    selected_ids = llm_tree_search_ollama(
+    
+    # 1. Tree Search (Aiguillage sémantique sur l'arbre compressé)
+    print("🔍 Execution du LLM Tree Search (Ollama)...")
+    search_result = llm_tree_search_ollama(
         query=query, 
         tree=tree, 
-        model=model, 
-        caption_index=caption_index or {}
     )
+    
+    # Extraction de la liste d'IDs depuis le dictionnaire JSON renvoyé par Qwen
+    node_ids = search_result.get("node_list", [])
+    thinking = search_result.get("thinking", "Pas de raisonnement fourni.")
+    
+    print(f"💡 Raisonnement du routeur : {thinking}")
 
-    # 2. Retriever (Extraction récursive sécurisée des nœuds)
-    print("📄 Retrieving full nodes content...")
-    retrieved_nodes = retrieve_nodes(selected_ids, tree)
+    # 2. Retriever (Extraction récursive et sécurisée des nœuds)
+    print("📄 Récupération du contenu complet des nœuds...")
+    retrieved_nodes = retrieve_nodes(node_ids, tree)
 
-    # 3. Generator (Génération de la réponse finale épurée et isolée)
-    print("🧠 Generating grounded answer via OpenAI...")
-    # ✅ CORRIGÉ : Utilisation du modèle de génération OpenAI configuré
-    return generate_answer(
+    # 3. Generator (Génération de la réponse finale avec citations)
+    print("🧠 Génération de la réponse ancrée (Ollama)...")
+    answer = generate_answer(
          query=query,
          nodes=retrieved_nodes,
-         model=model,
-         caption_index=caption_index or {}
+         model=model
     )
+    
+    # Pratique pour Streamlit : On renvoie la réponse ET le raisonnement du choix des nœuds
+    return {
+        "answer": answer,
+        "thinking": thinking,
+        "retrieved_sections": [n["title"] for n in retrieved_nodes]
+    }
 

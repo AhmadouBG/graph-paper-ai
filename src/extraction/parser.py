@@ -12,54 +12,46 @@ load_dotenv()
 import time
 from llama_cloud import LlamaCloud
 
+from pathlib import Path
+from llama_cloud import LlamaCloud
+
 def _parse_with_llamacloud(pdf_path: str, api_key: str) -> list[dict]:
     """
     Retourne une liste de dictionnaires par page avec : 'page' (int), 'md' (str).
-    Version corrigée et robuste pour l'API LlamaCloud v2.
+    Version v2 simplifiée - LlamaCloud gère nativement l'attente du résultat de manière synchrone.
     """
     # 1. Initialisation du client
     client = LlamaCloud(api_key=api_key)
 
-    # 2. Upload sécurisé du fichier (en utilisant Path)
+    # 2. Upload sécurisé du fichier local vers le cloud
     print(f"Téléversement de {pdf_path} vers LlamaCloud...")
     uploaded_file = client.files.create(
         file=Path(pdf_path), 
         purpose="parse"
     )
 
-    # 3. Lancement de la tâche de parsing (Agentic Tier)
-    print("Démarrage du parsing agentique...")
-    job = client.parsing.parse(
+    # 3. Lancement et attente synchrone automatique du parsing (Agentic Tier)
+    print("Démarrage du parsing agentique et attente du résultat...")
+    result = client.parsing.parse(
         file_id=uploaded_file.id,
         tier="agentic",
         version="latest",
-        expand=["markdown"]  # Demande explicitement le rendu Markdown
+        expand=["markdown"]  # Demande explicitement la structure Markdown
     )
 
-    # 4. Boucle d'attente (Polling) - Crucial car le parsing est asynchrone
-    print("Attente du traitement du document...")
-    while job.status in ["pending", "processing"]:
-        time.sleep(2)  # Pause de 2 secondes entre chaque vérification
-        job = client.parsing.get(job.id)  # Rafraîchir l'état du job
-
-    if job.status == "failed":
-        raise Exception(f"Le parsing de LlamaCloud a échoué : {job.error_message}")
-
-    # 5. Extraction sécurisée des données
+    # 4. Extraction immédiate des pages (Le résultat est déjà prêt)
     pages_data = []
     
-    # Le SDK mappe les résultats dans 'result' ou directement dans l'arborescence du job
-    if hasattr(job, "markdown") and job.markdown and hasattr(job.markdown, "pages"):
-        pages = job.markdown.pages
-    elif hasattr(job, "pages"):
-        pages = job.pages
+    # Validation de l'accès aux attributs de l'objet ParsingGetResponse
+    if hasattr(result, "markdown") and result.markdown and hasattr(result.markdown, "pages"):
+        pages = result.markdown.pages
     else:
-        # Fallback de secours via dictionnaire si la structure Pydantic varie
-        job_dict = job.dict() if hasattr(job, "dict") else vars(job)
-        pages = job_dict.get("markdown", {}).get("pages", [])
+        # Fallback au cas où le schéma d'un dictionnaire brut soit retourné
+        result_dict = result.dict() if hasattr(result, "dict") else vars(result)
+        pages = result_dict.get("markdown", {}).get("pages", [])
 
     for p in pages:
-        # Gestion dynamique selon que 'p' soit un objet ou un dictionnaire
+        # Gestion de la structure de l'objet Page
         p_status = getattr(p, "success", True) if not isinstance(p, dict) else p.get("success", True)
         
         if p_status:
