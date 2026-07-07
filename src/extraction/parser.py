@@ -15,57 +15,84 @@ from llama_cloud import LlamaCloud
 from pathlib import Path
 from llama_cloud import LlamaCloud
 
-def _parse_with_llamacloud(pdf_path: str, api_key: str) -> list[dict]:
-    """
-    Retourne une liste de dictionnaires par page avec : 'page' (int), 'md' (str).
-    Version v2 simplifiée - LlamaCloud gère nativement l'attente du résultat de manière synchrone.
-    """
+from pathlib import Path
+from llama_cloud import LlamaCloud
+import hashlib
+from pathlib import Path
+from llama_cloud import LlamaCloud
+
+def _calculate_file_hash(file_path: str) -> str:
+    """Calcule l'empreinte unique (SHA-256) du fichier temporaire."""
+    hasher = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+def _parse_with_llamacloud(pdf_path: str, api_key: str, project_id: str = None) -> list[dict]:
     # 1. Initialisation du client
     client = LlamaCloud(api_key=api_key)
+    
+    # 2. Récupération du hash unique du fichier temporaire
+    file_hash = _calculate_file_hash(pdf_path)
+    uploaded_file_id = None
 
-    # 2. Upload sécurisé du fichier local vers le cloud
-    print(f"Téléversement de {pdf_path} vers LlamaCloud...")
-    uploaded_file = client.files.create(
-        file=Path(pdf_path), 
-        purpose="parse"
-    )
+    print(f"Recherche du fichier dans le projet LlamaCloud (Project ID: {project_id or 'Défaut'})...")
+    
+    # 3. Lister les fichiers uniquement au sein du projet ciblé
+    # Note: On passe project_id dans les filtres si l'API du SDK le permet, 
+    # ou on filtre manuellement les attributs de file_info
+    files_list = client.files.list(project_id=project_id) if project_id else client.files.list()
+    
+    for file_info in files_list:
+        # 1. Vérification primaire via le hash stocké dans external_file_id
+        if getattr(file_info, "external_file_id", None) == file_hash:
+            uploaded_file_id = file_info.id
+            print(f"✨ Fichier identique trouvé dans le projet via hash (ID: {uploaded_file_id}). Cache activé !")
+            break
+        # 2. Vérification secondaire (fallback) via le nom exact du fichier original
+        elif getattr(file_info, "name", None) == Path(pdf_path).name:
+            uploaded_file_id = file_info.id
+            print(f"✨ Fichier identique trouvé dans le projet via le nom (ID: {uploaded_file_id}). Cache activé !")
+            break
 
-    # 3. Lancement et attente synchrone automatique du parsing (Agentic Tier)
-    print("Démarrage du parsing agentique et attente du résultat...")
+    # 4. Si absent du projet, on le téléverse au bon endroit
+    if not uploaded_file_id:
+        print(f"Téléversement du fichier temporaire vers le projet...")
+        uploaded_file = client.files.create(
+            file=Path(pdf_path), 
+            purpose="parse",
+            project_id=project_id, # Associe explicitement le fichier au projet
+            external_file_id=file_hash # Associe le hash unique du fichier
+        )
+        uploaded_file_id = uploaded_file.id
+
+    # 5. Extraction via l'Agentic Tier (Bénéficie du cache si l'ID existait déjà)
+    print("Démarrage du parsing agentique...")
     result = client.parsing.parse(
-        file_id=uploaded_file.id,
+        file_id=uploaded_file_id,
         tier="agentic",
         version="latest",
-        expand=["markdown"]  # Demande explicitement la structure Markdown
+        expand=["markdown"]
     )
 
-    # 4. Extraction immédiate des pages (Le résultat est déjà prêt)
+    # 6. Extraction des pages
     pages_data = []
-    
-    # Validation de l'accès aux attributs de l'objet ParsingGetResponse
     if hasattr(result, "markdown") and result.markdown and hasattr(result.markdown, "pages"):
         pages = result.markdown.pages
     else:
-        # Fallback au cas où le schéma d'un dictionnaire brut soit retourné
         result_dict = result.dict() if hasattr(result, "dict") else vars(result)
         pages = result_dict.get("markdown", {}).get("pages", [])
 
     for p in pages:
-        # Gestion de la structure de l'objet Page
         p_status = getattr(p, "success", True) if not isinstance(p, dict) else p.get("success", True)
-        
         if p_status:
             page_num = getattr(p, "page_number", None) if not isinstance(p, dict) else p.get("page_number")
             md_content = getattr(p, "markdown", "") if not isinstance(p, dict) else p.get("markdown", "")
-            
-            pages_data.append({
-                "page": page_num,
-                "md": md_content or "",
-            })
+            pages_data.append({"page": page_num, "md": md_content or ""})
 
-    print(f"Parsing terminé avec succès. {len(pages_data)} pages extraites.")
+    print(f"Parsing terminé. {len(pages_data)} pages extraites.")
     return pages_data
-
 
 def _build_pure_text_tree(markdown_text: str) -> list[dict]:
     """

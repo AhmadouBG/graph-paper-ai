@@ -114,7 +114,7 @@ def run_pipeline(pdf_path: str) -> list[dict]:
     
     with st.spinner("🌲 Structuration de l'arbre documentaire..."):
         tree = _build_pure_text_tree(markdown_content)
-    print("="*60 + "\n" + str(tree) + "\n" + "="*60 + "\n")
+    #print("="*60 + "\n" + str(tree) + "\n" + "="*60 + "\n")
     return tree
 
 def check_ollama(model: str) -> bool:
@@ -233,9 +233,10 @@ if not st.session_state.tree:
             elif not ollama_ok:
                 st.error(f"Impossible de joindre Ollama. Assurez-vous que le modèle '{model}' est lancé.")
             else:
-                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-                    tmp.write(uploaded_file.getvalue())
-                    tmp_path = tmp.name
+                tmpdir = tempfile.mkdtemp()
+                tmp_path = os.path.join(tmpdir, uploaded_file.name)
+                with open(tmp_path, "wb") as f:
+                    f.write(uploaded_file.getvalue())
 
                 # ── Handler de téléchargement et traitement ────────────────────────────
                 try:
@@ -254,7 +255,8 @@ if not st.session_state.tree:
                     st.error(f"Échec du traitement du document : {e}")
                 finally:
                     try:
-                        os.unlink(tmp_path)
+                        import shutil
+                        shutil.rmtree(tmpdir)
                     except Exception:
                         pass
 

@@ -6,37 +6,75 @@ def tokenize(text: str) -> list[str]:
     text = text.lower()
     text = re.sub(r'[^\w\s]', ' ', text)
     return text.split()
-
-def find_visual_element_by_regex(query: str, flattened_nodes: list) -> list[str]:
+def find_visual_element_by_regex(query: str, flattened_nodes: list, top_k: int = 2) -> list[str]:
     """
-    Scanne les requêtes pour détecter les mentions de tableaux/figures.
-    Gère les chiffres romains (III, IV) et arabes, insensible aux balises HTML collées.
+    Analyse la requête et applique un routage contextuel intelligent :
+    - Si FIGURE : Récupère le nœud de la légende + le nœud PRÉCÉDENT (données au-dessus).
+    - Si TABLE : Récupère le nœud de la légende + le nœud SUIVANT (données en-dessous).
     """
     cleaned_query = query.lower().strip()
     cleaned_query = re.sub(r'\s+', ' ', cleaned_query)
     
-    # Capture le type de composant et son identifiant (ex: table, iii, 3)
-    pattern = r'(?:table|fig\.?|figure)\s+([a-zA-Z0-9_]+)'
+    # Détection du type et du numéro (gère "table iii", "fig. 5", "figure 2:")
+    pattern = r'(?:(table)|(fig\.?|figure))\s+([a-zA-Z0-9_]+)'
     match = re.search(pattern, cleaned_query)
     
     if not match:
         return []
         
-    target_number = match.group(1)
-    matched_node_ids = []
+    is_table = bool(match.group(1))   # True si c'est un tableau
+    is_figure = bool(match.group(2))  # True si c'est une figure
+    target_number = match.group(3)     # Ex: "iii" ou "5"
     
-    for n in flattened_nodes:
-        # Analyse sur une copie en minuscules. Le contenu original du nœud reste INTACT.
+    matched_indices = []
+    
+    # 1. Trouver les index des nœuds qui contiennent la légende
+    for idx, n in enumerate(flattened_nodes):
         content_to_scan = f"{n['title']} {n.get('content', '')}".lower()
         
-        # Le pattern accepte que le numéro soit suivi de ponctuation (ex: "table iii.") 
-        # ou directement d'une balise HTML (ex: "table iii<table>")
+        # Regex tolérante aux caractères collés (ex: "figure 2:", "table iii.")
         visual_pattern = rf'(?:table|fig\.?|figure)\s+{re.escape(target_number)}(?:\b|[^a-z0-9_]|<)'
         
         if re.search(visual_pattern, content_to_scan):
-            matched_node_ids.append(n["node_id"])
+            matched_indices.append(idx)
             
-    return matched_node_ids
+    if not matched_indices:
+        return []
+
+    # 2. Application de la règle de voisinage structurel scientifique
+    final_node_ids = []
+    seen_ids = set()
+    
+    for idx in matched_indices:
+        current_node = flattened_nodes[idx]
+        
+        if is_figure:
+            # RÈGLE FIGURE : L'image est au-dessus. On prend le nœud précédent si disponible.
+            if idx > 0:
+                prev_node = flattened_nodes[idx - 1]
+                if prev_node["node_id"] not in seen_ids:
+                    seen_ids.add(prev_node["node_id"])
+                    final_node_ids.append(prev_node["node_id"])
+            
+            # On ajoute le nœud de la légende lui-même
+            if current_node["node_id"] not in seen_ids:
+                seen_ids.add(current_node["node_id"])
+                final_node_ids.append(current_node["node_id"])
+                
+        elif is_table:
+            # RÈGLE TABLEAU : La légende est en haut. On ajoute d'abord le nœud de la légende.
+            if current_node["node_id"] not in seen_ids:
+                seen_ids.add(current_node["node_id"])
+                final_node_ids.append(current_node["node_id"])
+                
+            # Les données HTML sont en-dessous. On prend le nœud suivant si disponible.
+            if idx < len(flattened_nodes) - 1:
+                next_node = flattened_nodes[idx + 1]
+                if next_node["node_id"] not in seen_ids:
+                    seen_ids.add(next_node["node_id"])
+                    final_node_ids.append(next_node["node_id"])
+
+    return final_node_ids[:top_k]
 
 def llm_tree_search_ollama(query: str, tree: list, model: str = "qwen2.5:3b", top_k: int = 2) -> dict:
     """
@@ -60,11 +98,10 @@ def llm_tree_search_ollama(query: str, tree: list, model: str = "qwen2.5:3b", to
     regex_matched_ids = find_visual_element_by_regex(query, flattened_nodes)
     
     if regex_matched_ids:
-        final_ids = regex_matched_ids[:top_k]
-        titles = [n["title"] for n in flattened_nodes if n["node_id"] in final_ids]
+        titles = [n["title"] for n in flattened_nodes if n["node_id"] in regex_matched_ids]
         return {
             "thinking": f"🎯 [Regex] Composant détecté dans la structure brute de : {', '.join(titles)}",
-            "node_list": final_ids
+            "node_list": regex_matched_ids
         }
 
     # 3. Exécution de la Passe B (BM25 pour questions génériques)
