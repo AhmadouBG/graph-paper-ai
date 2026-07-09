@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from deepeval.tracing import observe, update_current_span
+
+
+@observe(type="retriever")
 def retrieve_nodes(selected_ids: list[str], tree: list[dict]) -> list[dict]:
     """
     Parcourt l'arbre de manière récursive, extrait les nœuds et les RE-TRIE 
@@ -26,5 +30,13 @@ def retrieve_nodes(selected_ids: list[str], tree: list[dict]) -> list[dict]:
     print(f"🎯 Retrieved node IDs: {node_ids}")
     print(f"📄 Sections found: {section_titles}")
     print("="*60 + "\n")
+
+    # The retrieved node contents are the context passed to the generator.
+    update_current_span(
+        input=selected_ids,
+        output=section_titles,
+        retrieval_context=[n.get("content", "") for n in retrieved],
+        metadata={"retrieved_node_ids": node_ids},
+    )
 
     return retrieved
