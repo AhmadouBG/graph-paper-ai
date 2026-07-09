@@ -1,5 +1,6 @@
 import re
 from rank_bm25 import BM25Okapi
+from deepeval.tracing import observe, update_current_span, update_retriever_span
 
 def tokenize(text: str) -> list[str]:
     """Nettoie et découpe le texte en tokens pour le moteur lexical BM25."""
@@ -38,6 +39,7 @@ def find_visual_element_by_regex(query: str, flattened_nodes: list) -> list[str]
             
     return matched_node_ids
 
+@observe(type="retriever")
 def llm_tree_search_ollama(query: str, tree: list, model: str = "qwen2.5:3b", top_k: int = 2) -> dict:
     """
     Routeur hybride pour Vectorless RAG :
@@ -62,6 +64,12 @@ def llm_tree_search_ollama(query: str, tree: list, model: str = "qwen2.5:3b", to
     if regex_matched_ids:
         final_ids = regex_matched_ids[:top_k]
         titles = [n["title"] for n in flattened_nodes if n["node_id"] in final_ids]
+        update_retriever_span(top_k=top_k)
+        update_current_span(
+            input=query,
+            output=titles,
+            metadata={"method": "regex", "top_k": top_k, "selected_ids": final_ids},
+        )
         return {
             "thinking": f"🎯 [Regex] Composant détecté dans la structure brute de : {', '.join(titles)}",
             "node_list": final_ids
@@ -94,6 +102,12 @@ def llm_tree_search_ollama(query: str, tree: list, model: str = "qwen2.5:3b", to
         selected_ids = [flattened_nodes[0]["node_id"]]
         selected_titles = [flattened_nodes[0]["title"]]
 
+    update_retriever_span(top_k=top_k)
+    update_current_span(
+        input=query,
+        output=selected_titles,
+        metadata={"method": "bm25", "top_k": top_k, "selected_ids": selected_ids},
+    )
     return {
         "thinking": f"🔍 [BM25] Correspondance lexicale dans : {', '.join(selected_titles)}",
         "node_list": selected_ids

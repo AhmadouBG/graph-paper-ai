@@ -1,5 +1,7 @@
 import ollama
+from deepeval.tracing import observe, update_current_span, update_llm_span
 
+@observe(type="llm")
 def generate_answer(query: str, nodes: list, model: str = "qwen2.5:3b") -> str:
     """
     Génère une réponse ancrée dans le contexte fourni en utilisant Ollama (Qwen 2.5).
@@ -35,14 +37,14 @@ Context:
 {context}
 
 Answer:"""
-    
+
+    messages = [{"role": "user", "content": user_prompt}]
+
     try:
         # 3. Appel à l'instance locale d'Ollama
         response = ollama.chat(
             model=model,
-            messages=[
-                {"role": "user", "content": user_prompt}
-            ],
+            messages=messages,
             options={
                 "temperature": 0.0,  # Température basse pour garantir la fidélité au texte source
                 "num_ctx": 4096,
@@ -50,8 +52,14 @@ Answer:"""
                     # Fenêtre étendue pour accueillir tout le contenu des nœuds extraits
             }
         )
-        
-        return response['message']['content']
+
+        answer = response['message']['content']
+        update_llm_span(model=model)
+        update_current_span(
+            input=messages,
+            output=[{"role": "assistant", "content": answer}],
+        )
+        return answer
 
     except Exception as e:
         return f"⚠️ Erreur lors de la génération de la réponse avec Ollama : {str(e)}"

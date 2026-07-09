@@ -7,4 +7,5 @@ datasets>=2.19.0
 ruff>=0.4.0
 pytest>=8.0.0
 llama-cloud>=2.1
+deepeval>=3.0.0
 

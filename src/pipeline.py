@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from deepeval.tracing import observe, update_current_trace
+
 # Importation de vos modules corrigés
 from src.retrieval.tree_search import llm_tree_search_ollama
 from src.retrieval.retriever import retrieve_nodes
@@ -27,6 +29,7 @@ def get_total_pages(nodes: list[dict]) -> int:
     walk(nodes)
     return max_page
 
+@observe(type="agent")
 def vectorless_rag_no_loss(
     query: str,
     tree: list[dict],
@@ -38,7 +41,8 @@ def vectorless_rag_no_loss(
       2. Retriever    — Récupère et déduplique le contenu complet des nœuds
       3. Generator    — Synthétise le contexte et génère la réponse ancrée via Ollama
     """
-    
+    update_current_trace(input=query, tags=["vectorless-rag", "graph-rag"])
+
     # 1. Tree Search (Aiguillage sémantique sur l'arbre compressé)
     print("🔍 Execution du LLM Tree Search (Ollama)...")
     search_result = llm_tree_search_ollama(
@@ -64,6 +68,11 @@ def vectorless_rag_no_loss(
          model=model
     )
     
+    update_current_trace(
+        output=answer,
+        metadata={"model": model, "retrieved_sections": len(retrieved_nodes)},
+    )
+
     # Pratique pour Streamlit : On renvoie la réponse ET le raisonnement du choix des nœuds
     return {
         "answer": answer,
