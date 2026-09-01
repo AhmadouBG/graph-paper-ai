@@ -76,7 +76,7 @@ def find_visual_element_by_regex(query: str, flattened_nodes: list, top_k: int =
 
     return final_node_ids[:top_k]
 
-def llm_tree_search_ollama(query: str, tree: list, model: str = "qwen2.5:3b", top_k: int = 2) -> dict:
+def llm_tree_search_ollama(query: str, tree: list, model: str = "qwen2.5:3b", top_k: int = 4) -> dict:
     """
     Routeur hybride pour Vectorless RAG :
     - Passe A : Détection déterministe par Regex (idéal pour Table III, Fig 5) en < 1ms.

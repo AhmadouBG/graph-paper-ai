@@ -65,16 +65,19 @@ def vectorless_rag_no_loss(
     )
     
     retrieved_sections = []
+    retrieved_texts = []
     for n in retrieved_nodes:
         p_start = n.get("page_start", "?")
         p_end = n.get("page_end", "?")
         page_str = f"p. {p_start}" if p_start == p_end else f"p. {p_start}-{p_end}"
         retrieved_sections.append(f"{n['title']} ({page_str})")
-
+        retrieved_texts.append(n.get("content", n.get("text", "")))
+     
     # Pratique pour Streamlit : On renvoie la réponse ET le raisonnement du choix des nœuds
     return {
         "answer": answer,
         "thinking": thinking,
-        "retrieved_sections": retrieved_sections
+        "retrieved_sections": retrieved_sections,
+        "retrieved_texts": retrieved_texts
     }
 

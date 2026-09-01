@@ -9,16 +9,7 @@ from dotenv import load_dotenv
 logger = logging.getLogger(__name__)
 load_dotenv()
 
-import time
-from llama_cloud import LlamaCloud
-
-from pathlib import Path
-from llama_cloud import LlamaCloud
-
-from pathlib import Path
-from llama_cloud import LlamaCloud
 import hashlib
-from pathlib import Path
 from llama_cloud import LlamaCloud
 
 def _calculate_file_hash(file_path: str) -> str:

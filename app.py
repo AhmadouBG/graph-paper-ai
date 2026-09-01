@@ -4,8 +4,9 @@ import tempfile
 import ollama
 import streamlit as st
 from dotenv import load_dotenv
-
-# Importations de vos modules corrigés et validés
+import io
+import sys
+from src.utils.dictionary import DICTIONARY
 from src.extraction.parser import _build_pure_text_tree, _parse_with_llamacloud
 from src.pipeline import vectorless_rag_no_loss, print_tree, get_total_pages
 
@@ -23,6 +24,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+# Les variables par défaut de l'application
+DEFAULT_MODEL = "qwen2.5:3b"
 
 # ── Custom CSS (Nettoyé des styles inutilisés) ─────────────────────────────────
 st.markdown("""
@@ -96,9 +99,10 @@ DEFAULT_MODEL = "qwen2.5:3b"
 # ── Core Pipeline (Version purement textuelle) ────────────────────────────────
 def run_pipeline(pdf_path: str) -> list[dict]:
     """Exécute le parsing LlamaCloud et construit l'arbre sémantique pur."""
+    t = DICTIONARY[st.session_state.lang] # Accès à la langue courante
     api_key = os.environ.get("LLAMA_CLOUD_API_KEY") or os.environ.get("LLAMACLOUD_API_KEY")
     if not api_key:
-        st.error("Clé LLAMA_CLOUD_API_KEY manquante dans le fichier .env.")
+        st.error(t["err_missing_api_env"])
         st.stop()
 
     with st.spinner("📖 Extraction du PDF avec LlamaCloud (Agentic)..."):
@@ -139,27 +143,26 @@ for key, default in [
     ("messages", []),
     ("pdf_name", ""),
     ("processing", False),
+    ("lang", "fr"), # Ajout de la langue par défaut
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
 
-# Donnez-moi la suite de votre app.py (la mise en page UI, la sidebar et la chat zone) 
-# et je l'adapterai directement à cette structure propre !
-import io
-import sys
-import os
-import tempfile
-import streamlit as st
+# Raccourci d'écriture des traductions
+t = DICTIONARY[st.session_state.lang]
 
-# Les variables par défaut de l'application
-DEFAULT_MODEL = "qwen2.5:3b"
+def toggle_language():
+    """Bascule d'une langue à l'autre."""
+    st.session_state.lang = "en" if st.session_state.lang == "fr" else "fr"
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("### ⚙️ Configuration")
-    model = st.text_input("Modèle", value=DEFAULT_MODEL, help="Nom du modèle local dans Ollama")
+    st.button(t["switch_btn"], on_click=toggle_language, use_container_width=True)
+    st.divider()
 
-    # Vérification de l'état des dépendances de manière simplifiée
+    st.markdown(t["cfg_title"])
+    model = st.text_input(t["lbl_model"], value=DEFAULT_MODEL, help=t["help_model"])
+
     ollama_ok = check_ollama(model)
     api_key_ok = bool(
         os.environ.get("LLAMA_CLOUD_API_KEY") or os.environ.get("LLAMACLOUD_API_KEY")
@@ -168,19 +171,18 @@ with st.sidebar:
     col_a, col_b = st.columns(2)
     with col_a:
         if ollama_ok:
-            st.markdown('<span class="status-ok">● Ollama</span>', unsafe_allow_html=True)
+            st.markdown(f'<span class="status-ok">{t["status_ollama_ok"]}</span>', unsafe_allow_html=True)
         else:
-            st.markdown('<span class="status-err">✕ Ollama</span>', unsafe_allow_html=True)
+            st.markdown(f'<span class="status-err">{t["status_ollama_err"]}</span>', unsafe_allow_html=True)
     with col_b:
         if api_key_ok:
-            st.markdown('<span class="status-ok">● API Key</span>', unsafe_allow_html=True)
+            st.markdown(f'<span class="status-ok">{t["status_api_ok"]}</span>', unsafe_allow_html=True)
         else:
-            st.markdown('<span class="status-err">✕ API Key</span>', unsafe_allow_html=True)
+            st.markdown(f'<span class="status-err">{t["status_api_err"]}</span>', unsafe_allow_html=True)
 
     if st.session_state.tree:
         st.divider()
-        # ── Sidebar: Charger un nouveau document ──────────────────────────────────────
-        if st.button("📂 Charger un nouveau document", use_container_width=True):
+        if st.button(t["btn_new_doc"], use_container_width=True):
             for key in ["tree", "messages", "pdf_name"]:
                 st.session_state[key] = (
                     None if key == "tree"
@@ -190,17 +192,17 @@ with st.sidebar:
             st.rerun()
         st.divider()
         
-        st.markdown("### 📚 Document Actif")
+        st.markdown(t["active_doc"])
         st.caption(f"**{st.session_state.pdf_name}**")
 
         c1, c2 = st.columns(2)
         with c1:
-            st.metric("Sections", count_nodes(st.session_state.tree))
+            st.metric(t["metric_sections"], count_nodes(st.session_state.tree))
         with c2:
             total_pages = get_total_pages(st.session_state.tree) if st.session_state.tree else "?"
-            st.metric("Pages", total_pages)
+            st.metric(t["metric_pages"], total_pages)
 
-        with st.expander("🌲 Arbre hiérarchique", expanded=False):
+        with st.expander(t["tree_expander"], expanded=False):
             buf = io.StringIO()
             old_stdout = sys.stdout
             sys.stdout = buf
@@ -208,51 +210,45 @@ with st.sidebar:
             sys.stdout = old_stdout
             st.code(buf.getvalue(), language="text")
 
-# ── Main area ─────────────────────────────────────────────────────────────────
+# ── 5. Main area ───────────────────────────────────────────────────────────────
 if not st.session_state.tree:
-    # ── Landing / Zone de Téléversement ──────────────────────────────────────
     st.markdown("<div style='height: 6vh'></div>", unsafe_allow_html=True)
 
     _, center, _ = st.columns([1, 2, 1])
     with center:
-        st.markdown('<p class="hero-title">Graph Paper AI</p>', unsafe_allow_html=True)
-        st.markdown(
-            '<p class="hero-sub">Recherche et analyse de papiers scientifiques sans vecteurs.</p>',
-            unsafe_allow_html=True,
-        )
+        st.markdown(f'<p class="hero-title">{t["hero_title"]}</p>', unsafe_allow_html=True)
+        st.markdown(f'<p class="hero-sub">{t["hero_sub"]}</p>', unsafe_allow_html=True)
 
         uploaded_file = st.file_uploader(
-            "Glissez un fichier PDF ici pour commencer",
+            t["uploader_label"],
             type=["pdf"],
             label_visibility="collapsed",
         )
 
         if uploaded_file is not None:
             if not api_key_ok:
-                st.error("Veuillez configurer la clé LLAMA_CLOUD_API_KEY dans votre fichier .env.")
+                st.error(t["err_api"])
             elif not ollama_ok:
-                st.error(f"Impossible de joindre Ollama. Assurez-vous que le modèle '{model}' est lancé.")
+                st.error(t["err_ollama"].format(model=model))
             else:
                 tmpdir = tempfile.mkdtemp()
                 tmp_path = os.path.join(tmpdir, uploaded_file.name)
                 with open(tmp_path, "wb") as f:
                     f.write(uploaded_file.getvalue())
 
-                # ── Handler de téléchargement et traitement ────────────────────────────
                 try:
-                    progress = st.progress(0, text="Initialisation…")
-                    progress.progress(20, text="Parsing du document avec LlamaCloud (Agentic)...")
+                    progress = st.progress(0, text=t["p_init"])
+                    progress.progress(20, text=t["p_parse"])
                     
-                    # Appel simplifié sans l'ancien traitement de captures d'images
                     tree = run_pipeline(tmp_path)
                     
-                    progress.progress(100, text="Prêt !")
+                    progress.progress(100, text=t["p_ready"])
                     st.session_state.tree = tree
                     st.session_state.pdf_name = uploaded_file.name
                     st.session_state.messages = []
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Échec du traitement du document : {e}")
+                    st.error(t["err_failed"].format(e))
                 finally:
                     try:
                         import shutil
@@ -265,9 +261,9 @@ if not st.session_state.tree:
         # Grille d'exemples d'utilisation
         cols = st.columns(3)
         hints = [
-            ("📝", "Questions Textuelles", "Définitions, méthodologie, conclusions sémantiques"),
-            ("📊", "Tableaux & Données", "Analyse des données converties en Markdown natif"),
-            ("🔍", "Zéro Vecteur", "Aiguillage déterministe via la structure du document"),
+            ("📝", t["hint_1_title"], t["hint_1_desc"]),
+            ("📊", t["hint_2_title"], t["hint_2_desc"]),
+            ("🔍", t["hint_3_title"], t["hint_3_desc"]),
         ]
         for col, (icon, label, example) in zip(cols, hints):
             with col:
@@ -290,9 +286,9 @@ else:
             f"""<div style='border:1px solid #e2e8f0;
             border-radius:12px;padding:1.25rem 1.5rem;margin-bottom:1rem'>
             <div style='color:#34d399;font-weight:600;margin-bottom:0.4rem'>
-            ✅ {st.session_state.pdf_name} est chargé avec succès</div>
+            {t["chat_success"].format(st.session_state.pdf_name)}</div>
             <div style='color:#6b7a99;font-size:0.875rem'>
-            L'arbre sémantique contient <b style='color:#4f8ef7'>{node_count} sections</b> exploitables. Posez votre question.</div>
+            {t["chat_sub"].format(node_count)}</div>
             </div>""",
             unsafe_allow_html=True,
         )
@@ -302,20 +298,20 @@ else:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
             if msg.get("thinking"):
-                with st.expander("💭 Processus de réflexion (Routage)", expanded=False):
+                with st.expander(t["expander_thinking"], expanded=False):
                     st.info(msg["thinking"])
             if msg.get("sources"):
-                with st.expander("📍 Sections consultées", expanded=False):
+                with st.expander(t["expander_sources"], expanded=False):
                     for s in msg["sources"]:
                         st.markdown(f"- {s}")
 
     # Zone de saisie utilisateur
     if prompt := st.chat_input(
-        "Posez une question sur le texte ou les tableaux du document...",
+        t["chat_input_placeholder"],
         disabled=not ollama_ok,
     ):
         if not ollama_ok:
-            st.error("Ollama n'est pas connecté.")
+            st.error(t["err_ollama_disconnected"])
         else:
             # Enregistrement et affichage immédiat de la question
             st.session_state.messages.append({"role": "user", "content": prompt})
@@ -323,7 +319,7 @@ else:
                 st.markdown(prompt)
 
             with st.chat_message("assistant"):
-                with st.spinner("Analyse de la structure et génération de la réponse..."):
+                with st.spinner(t["spinner_analyzing"]):
                     # Exécution de votre nouveau pipeline corrigé
                     result = vectorless_rag_no_loss(
                         query=prompt,
@@ -335,18 +331,25 @@ else:
                 st.markdown(result["answer"])
                 
                 # Affichage transparent du routage du Vectorless RAG
-                with st.expander("💭 Processus de réflexion (Routage)", expanded=False):
+                with st.expander(t["expander_thinking"], expanded=False):
                     st.info(result["thinking"])
                     
                 if result.get("retrieved_sections"):
-                    with st.expander("📍 Sections consultées", expanded=False):
+                    with st.expander(t["expander_sources"], expanded=False):
                         for s in result["retrieved_sections"]:
                             st.markdown(f"- {s}")
-
+                if result.get("retrieved_texts"):
+                    with st.expander("Context Sources", expanded=False):
+                        for idx, chunk in enumerate(result["retrieved_texts"]):
+                            st.markdown(f"**Context Chunk {idx+1}:**")
+                            st.markdown(f"```text\n{chunk}\n```")
+                            st.markdown("---")
             # Persistance dans l'historique de session
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": result["answer"],
                 "thinking": result["thinking"],
                 "sources": result.get("retrieved_sections", []),
+                "retrieved_texts": result.get("retrieved_texts", []),
             })
+
