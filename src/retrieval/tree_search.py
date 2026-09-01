@@ -6,7 +6,7 @@ def tokenize(text: str) -> list[str]:
     text = text.lower()
     text = re.sub(r'[^\w\s]', ' ', text)
     return text.split()
-def find_visual_element_by_regex(query: str, flattened_nodes: list, top_k: int = 2) -> list[str]:
+def find_visual_element_by_regex(query: str, flattened_nodes: list, top_k: int = 3) -> list[str]:
     """
     Analyse la requête et applique un routage contextuel intelligent :
     - Si FIGURE : Récupère le nœud de la légende + le nœud PRÉCÉDENT (données au-dessus).

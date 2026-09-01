@@ -85,33 +85,119 @@ def _parse_with_llamacloud(pdf_path: str, api_key: str, project_id: str = None) 
     print(f"Parsing terminé. {len(pages_data)} pages extraites.")
     return pages_data
 
+import re
+
+# ── Granularity constants ──────────────────────────────────────────
+MAX_TOKENS_PER_NODE = 300          # ~1200 chars; tune to your retriever
+TABLE_CAPTION_RE   = re.compile(r'^(TABLE\s+[IVXLCDM\d]+\..*)', re.IGNORECASE)
+FIGURE_CAPTION_RE  = re.compile(r'^(Fig\.?\s*\d+[\s\.\:].*)',   re.IGNORECASE)
+
+def _count_tokens(text: str) -> int:
+    """Rough token estimate: ~4 chars per token."""
+    return max(1, len(text) // 4)
+
+def _split_long_content(text: str, max_tokens: int = MAX_TOKENS_PER_NODE) -> list[str]:
+    """Split oversized text into paragraph-level sub-chunks."""
+    if _count_tokens(text) <= max_tokens:
+        return [text]
+    paragraphs = text.split("\n\n")
+    sub_chunks, current, current_tokens = [], [], 0
+    for para in paragraphs:
+        pt = _count_tokens(para)
+        if current_tokens + pt > max_tokens and current:
+            sub_chunks.append("\n\n".join(current))
+            current, current_tokens = [para], pt
+        else:
+            current.append(para)
+            current_tokens += pt
+    if current:
+        sub_chunks.append("\n\n".join(current))
+    return sub_chunks
+
+
+def _make_sub_nodes(parent_node: dict, node_counter: int) -> tuple[list[dict], int]:
+    """
+    Post-process a finalized node's content:
+    Split it into atomic sub-nodes at TABLE / Figure / paragraph boundaries.
+    Returns (list_of_sub_nodes, updated_counter).
+    """
+    content = parent_node.get("content", "")
+    if not content:
+        return [], node_counter
+
+    # ── Step 1: Split content at TABLE and Figure caption boundaries ──
+    raw_segments = []
+    current_segment_lines = []
+
+    for line in content.splitlines():
+        stripped = line.strip()
+        is_boundary = (
+            TABLE_CAPTION_RE.match(stripped) or
+            FIGURE_CAPTION_RE.match(stripped)
+        )
+        if is_boundary and current_segment_lines:
+            raw_segments.append("\n".join(current_segment_lines).strip())
+            current_segment_lines = [line]
+        else:
+            current_segment_lines.append(line)
+
+    if current_segment_lines:
+        raw_segments.append("\n".join(current_segment_lines).strip())
+
+    # ── Step 2: Further split oversized segments by paragraph ──
+    fine_segments = []
+    for seg in raw_segments:
+        fine_segments.extend(_split_long_content(seg, MAX_TOKENS_PER_NODE))
+
+    # ── Step 3: Only create sub-nodes if we actually split ──
+    if len(fine_segments) <= 1:
+        return [], node_counter   # no split needed — keep parent as-is
+
+    sub_nodes = []
+    for seg in fine_segments:
+        if not seg.strip():
+            continue
+        first_line = seg.strip().splitlines()[0].strip()
+        title = first_line[:80] if first_line else f"sub_{node_counter:04d}"
+        sub_nodes.append({
+            "node_id": f"{node_counter:04d}",
+            "title": title,
+            "page_start": parent_node["page_start"],
+            "page_end":   parent_node["page_end"],
+            "content":    seg.strip(),
+            "nodes":      [],
+        })
+        node_counter += 1
+
+    return sub_nodes, node_counter
+
+
 def _build_pure_text_tree(markdown_text: str) -> list[dict]:
     """
     Construit un arbre de documents sémantique à partir du Markdown de LlamaCloud.
     Optimisé pour les articles scientifiques (gestion des titres répétés et hiérarchie).
+    Now with fine-grained sub-node splitting at TABLE / Figure / paragraph boundaries.
     """
-    # 1. Normalisation des marqueurs de page (LlamaCloud utilise parfois des syntaxes variées)
     text_with_page_tags = re.sub(r'---\s*Page\s*(\d+)\s*---', r'[[PAGE_\1]]', markdown_text)
     lines = text_with_page_tags.split("\n")
 
-    root_nodes = []
-    stack = []
+    root_nodes   = []
+    stack        = []
     current_page = 1
     node_counter = 0
-    seen_titles = set() # Pour éviter de dupliquer les titres de garde répétés en haut de page
+    seen_titles  = set()
 
     def make_node(node_id: str, title: str, page: int, level: int) -> dict:
         return {
-            "node_id": node_id,
-            "title": title,
-            "level": level,
-            "page_start": page,
-            "page_end": page,
+            "node_id":       node_id,
+            "title":         title,
+            "level":         level,
+            "page_start":    page,
+            "page_end":      page,
             "content_lines": [],
-            "nodes": [],
+            "nodes":         [],
         }
 
-    # Nœud racine initial pour capturer les métadonnées (auteurs, abstract si hors titre)
     intro_node = make_node(f"{node_counter:04d}", "Document Header / Abstract", 1, 0)
     node_counter += 1
     root_nodes.append(intro_node)
@@ -120,28 +206,22 @@ def _build_pure_text_tree(markdown_text: str) -> list[dict]:
     for line in lines:
         cleaned_line = line.strip()
         if not cleaned_line:
-            # Conserver les lignes vides uniquement si on est dans un tableau HTML pour garder la structure
             if stack and any("</table" in l for l in stack[-1]["node"]["content_lines"][-5:]):
                 stack[-1]["node"]["content_lines"].append("")
             continue
 
-        # Détection du changement de page
         page_match = re.search(r'\[\[PAGE_(\d+)\]\]', cleaned_line)
         if page_match:
             current_page = int(page_match.group(1))
-            # Met à jour la page de fin de tous les nœuds actuellement ouverts dans la pile
             for item in stack:
                 item["node"]["page_end"] = max(item["node"]["page_end"], current_page)
             continue
 
-        # Détection d'un titre Markdown (# Titre)
         heading_match = re.match(r'^(#{1,6})\s+(.*)$', cleaned_line)
         if heading_match:
             level = len(heading_match.group(1))
             title = heading_match.group(2).strip()
 
-            # Anti-bug : Si le titre exact de niveau 1 a déjà été vu (ex: titre du papier répété en p.2)
-            # On ignore la création d'un nouveau nœud et on traite la ligne comme du texte ou on passe.
             if level == 1 and title in seen_titles:
                 continue
             if level == 1:
@@ -150,37 +230,42 @@ def _build_pure_text_tree(markdown_text: str) -> list[dict]:
             new_node = make_node(f"{node_counter:04d}", title, current_page, level)
             node_counter += 1
 
-            # Dépiler jusqu'à trouver le parent légitime (un niveau strictement inférieur)
             while stack and stack[-1]["level"] >= level:
                 stack.pop()
 
             if not stack:
-                # Sécurité si la pile est vide (ne devrait pas arriver avec le nœud 0)
                 root_nodes.append(new_node)
                 stack.append({"level": level, "node": new_node})
             else:
                 stack[-1]["node"]["nodes"].append(new_node)
                 stack.append({"level": level, "node": new_node})
         else:
-            # Ajout du texte au nœud actif le plus profond
             if stack:
                 stack[-1]["node"]["content_lines"].append(line)
 
+    # ── Finalize: clean content, then inject sub-nodes ──────────────
     def finalize_tree(nodes: list[dict], next_start: int | None = None) -> None:
-        """Nettoie les lignes, fusionne le texte et ajuste les pages de fin."""
+        nonlocal node_counter
         for i, n in enumerate(nodes):
             n["content"] = "\n".join(n["content_lines"]).strip()
             del n["content_lines"]
-            
-            # Gestion des niveaux pour l'affichage/RAG
-            del n["level"] 
+            del n["level"]
 
             if i + 1 < len(nodes):
                 n["page_end"] = max(n["page_end"], nodes[i + 1]["page_start"])
             elif next_start:
                 n["page_end"] = max(n["page_end"], next_start)
-            
-            if n["nodes"]:
+
+            # ── NEW: inject fine-grained sub-nodes into content ──
+            if not n["nodes"]:
+                # Leaf node — safe to split its content into sub-nodes
+                sub_nodes, node_counter = _make_sub_nodes(n, node_counter)
+                if sub_nodes:
+                    # Replace content with sub-nodes; keep a summary title
+                    n["nodes"]   = sub_nodes
+                    n["content"] = ""   # content now lives in sub-nodes
+            else:
+                # Non-leaf — recurse into existing children first
                 finalize_tree(n["nodes"], n["page_end"])
 
     finalize_tree(root_nodes)
