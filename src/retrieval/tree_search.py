@@ -76,7 +76,7 @@ def find_visual_element_by_regex(query: str, flattened_nodes: list, top_k: int =
 
     return final_node_ids[:top_k]
 
-def llm_tree_search_ollama(query: str, tree: list, model: str = "qwen2.5:3b", top_k: int = 4) -> dict:
+def llm_tree_search_ollama(query: str, tree: list, model: str = "qwen2.5:3b", top_k: int = 3) -> dict:
     """
     Routeur hybride pour Vectorless RAG :
     - Passe A : Détection déterministe par Regex (idéal pour Table III, Fig 5) en < 1ms.
@@ -104,25 +104,51 @@ def llm_tree_search_ollama(query: str, tree: list, model: str = "qwen2.5:3b", to
             "node_list": regex_matched_ids
         }
 
-    # 3. Exécution de la Passe B (BM25 pour questions génériques)
+    # 3. Exécution de la Passe B (BM25 pour questions génériques avec détection d'intention comparative)
     corpus_tokens = []
     for n in flattened_nodes:
-        node_text = f"{n['title']} {n.get('content', '')}"
+        # Ponderer le titre pour donner plus de poids à la sémantique de la section
+        node_text = f"{n['title']} {n['title']} {n.get('content', '')}"
         corpus_tokens.append(tokenize(node_text))
 
     bm25 = BM25Okapi(corpus_tokens)
     query_tokens = tokenize(query)
-    scores = bm25.get_scores(query_tokens)
+    scores = list(bm25.get_scores(query_tokens))
+
+    # 4. Passe B.1: Détection d'intention comparative / de synthèse
+    COMPARATIVE_KEYWORDS = {
+        "best", "worst", "compare", "comparison", "overall", "performance",
+        "conclusion", "versus", "vs", "summary", "highest", "lowest", "rank",
+        "ranking", "evaluate", "evaluation", "which"
+    }
+    SYNTHESIS_SECTION_KEYWORDS = {
+        "performance", "analysis", "conclusion", "discussion", "results",
+        "result", "comparison", "summary", "evaluation", "overview"
+    }
+
+    is_comparative = any(kw in query_tokens for kw in COMPARATIVE_KEYWORDS)
 
     node_scores = []
     for idx, score in enumerate(scores):
-        node_scores.append({"node": flattened_nodes[idx], "score": score})
-        
+        n = flattened_nodes[idx]
+        title_lower = n["title"].lower()
+
+        # Si la requête est comparative, booster les nœuds de synthèse / conclusion / analyse de performance
+        if is_comparative:
+            if any(s_kw in title_lower for s_kw in SYNTHESIS_SECTION_KEYWORDS):
+                # Triple le score si le titre indique une section de synthèse
+                score *= 3.0 if score > 0 else 5.0
+
+        node_scores.append({"node": n, "score": score})
+
     node_scores.sort(key=lambda x: x["score"], reverse=True)
+
+    # Pour les requêtes comparatives, augmenter top_k pour capturer à la fois le tableau et l'analyse
+    effective_top_k = top_k + 1 if is_comparative else top_k
 
     selected_ids = []
     selected_titles = []
-    for item in node_scores[:top_k]:
+    for item in node_scores[:effective_top_k]:
         if item["score"] > 0:
             selected_ids.append(item["node"]["node_id"])
             selected_titles.append(item["node"]["title"])
@@ -131,7 +157,9 @@ def llm_tree_search_ollama(query: str, tree: list, model: str = "qwen2.5:3b", to
         selected_ids = [flattened_nodes[0]["node_id"]]
         selected_titles = [flattened_nodes[0]["title"]]
 
+    tag = "📊 [BM25 + Comparative Boost]" if is_comparative else "🔍 [BM25]"
     return {
-        "thinking": f"🔍 [BM25] Correspondance lexicale dans : {', '.join(selected_titles)}",
+        "thinking": f"{tag} Correspondance lexicale dans : {', '.join(selected_titles)}",
         "node_list": selected_ids
     }
+
