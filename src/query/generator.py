@@ -18,7 +18,7 @@ def generate_answer(query: str, nodes: list, model: str = "qwen2.5:3b") -> str:
         
         context_parts.append(
             f"[Section: '{node['title']}' | {page_info}]\n"
-            f"{node.get('content', 'Contenu non disponible.')}"
+            f"{node.get('text') or node.get('content', 'Contenu non disponible.')}"
         )
     context = "\n\n---\n\n".join(context_parts)
     
@@ -45,8 +45,9 @@ Answer:"""
             ],
             options={
                 "temperature": 0.0,  # Température basse pour garantir la fidélité au texte source
-                "num_ctx": 4096,
-                "num_predict": 512
+                "num_ctx": 2048,
+                "num_predict": 512,
+                "keep_alive": "10m"
                     # Fenêtre étendue pour accueillir tout le contenu des nœuds extraits
             }
         )

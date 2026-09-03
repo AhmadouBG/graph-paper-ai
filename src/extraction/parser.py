@@ -88,7 +88,7 @@ def _parse_with_llamacloud(pdf_path: str, api_key: str, project_id: str = None) 
 import re
 
 # ── Granularity constants ──────────────────────────────────────────
-MAX_TOKENS_PER_NODE = 300          # ~1200 chars; tune to your retriever
+MAX_TOKENS_PER_NODE = 800          # ~3200 chars; keeps cohesive section context
 TABLE_CAPTION_RE   = re.compile(r'^(TABLE\s+[IVXLCDM\d]+\..*)', re.IGNORECASE)
 FIGURE_CAPTION_RE  = re.compile(r'^(Fig\.?\s*\d+[\s\.\:].*)',   re.IGNORECASE)
 
@@ -161,7 +161,8 @@ def _make_sub_nodes(parent_node: dict, node_counter: int) -> tuple[list[dict], i
         title = first_line[:80] if first_line else f"sub_{node_counter:04d}"
         sub_nodes.append({
             "node_id": f"{node_counter:04d}",
-            "title": title,
+            "parent_id": parent_node["node_id"],
+            "title": f"{parent_node['title']} > {title}",
             "page_start": parent_node["page_start"],
             "page_end":   parent_node["page_end"],
             "content":    seg.strip(),
@@ -175,8 +176,7 @@ def _make_sub_nodes(parent_node: dict, node_counter: int) -> tuple[list[dict], i
 def _build_pure_text_tree(markdown_text: str) -> list[dict]:
     """
     Construit un arbre de documents sémantique à partir du Markdown de LlamaCloud.
-    Optimisé pour les articles scientifiques (gestion des titres répétés et hiérarchie).
-    Now with fine-grained sub-node splitting at TABLE / Figure / paragraph boundaries.
+    Optimisé pour les articles scientifiques.
     """
     text_with_page_tags = re.sub(r'---\s*Page\s*(\d+)\s*---', r'[[PAGE_\1]]', markdown_text)
     lines = text_with_page_tags.split("\n")
@@ -256,16 +256,12 @@ def _build_pure_text_tree(markdown_text: str) -> list[dict]:
             elif next_start:
                 n["page_end"] = max(n["page_end"], next_start)
 
-            # ── NEW: inject fine-grained sub-nodes into content ──
             if not n["nodes"]:
-                # Leaf node — safe to split its content into sub-nodes
+                # Leaf node — create sub-nodes if content is very long, but PRESERVE parent content
                 sub_nodes, node_counter = _make_sub_nodes(n, node_counter)
                 if sub_nodes:
-                    # Replace content with sub-nodes; keep a summary title
-                    n["nodes"]   = sub_nodes
-                    n["content"] = ""   # content now lives in sub-nodes
+                    n["nodes"] = sub_nodes
             else:
-                # Non-leaf — recurse into existing children first
                 finalize_tree(n["nodes"], n["page_end"])
 
     finalize_tree(root_nodes)
