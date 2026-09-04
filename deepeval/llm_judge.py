@@ -124,7 +124,7 @@ class NvidiaJudgeModel(DeepEvalBaseLLM):
                 completion = self.client.chat.completions.create(
                     model=self.model_name,
                     messages=messages,
-                    temperature=0.5,
+                    temperature=0.0,
                     top_p=1,
                     max_tokens=self.max_tokens,
                     reasoning_effort=self.reasoning_effort,
@@ -159,7 +159,7 @@ class NvidiaJudgeModel(DeepEvalBaseLLM):
                     completion = await self.async_client.chat.completions.create(
                         model=self.model_name,
                         messages=messages,
-                        temperature=0.5,
+                        temperature=0.0,
                         top_p=1,
                         max_tokens=self.max_tokens,
                         reasoning_effort=self.reasoning_effort,

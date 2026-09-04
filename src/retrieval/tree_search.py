@@ -45,6 +45,8 @@ class FastTreeRetriever:
             "result", "comparison", "summary", "evaluation", "overview"
         }
 
+        self.COMPARATIVE_PHRASE_MIN_HITS = 2
+        
     def _flatten(self, nodes: list[dict]) -> None:
         """Met à plat l'arbre de nœuds de manière récursive."""
         for n in nodes:
@@ -121,7 +123,8 @@ class FastTreeRetriever:
 
         query_tokens = self.tokenize(query)
         scores = list(self.bm25.get_scores(query_tokens))
-        is_comparative = any(kw in self.COMPARATIVE_KEYWORDS for kw in query_tokens)
+        comparative_hits = sum(1 for kw in query_tokens if kw in self.COMPARATIVE_KEYWORDS)
+        is_comparative = comparative_hits >= self.COMPARATIVE_PHRASE_MIN_HITS
 
         node_scores = []
         for idx, score in enumerate(scores):
@@ -130,7 +133,7 @@ class FastTreeRetriever:
 
             if is_comparative:
                 if any(s_kw in title_lower for s_kw in self.SYNTHESIS_SECTION_KEYWORDS):
-                    score *= 3.0 if score > 0 else 5.0
+                    score *= 2.0 if score > 0 else 3.0
 
             node_scores.append({"node": n, "score": score})
 
