@@ -37,10 +37,11 @@ class FastTreeRetriever:
         self.COMPARATIVE_KEYWORDS = {
             "best", "worst", "compare", "comparison", "overall", "performance",
             "conclusion", "versus", "vs", "summary", "highest", "lowest", "rank",
-            "ranking", "evaluate", "evaluation", "which"
+            "ranking", "evaluate", "evaluation", "which", "aim", "goal", "purpose",
+            "objective"
         }
         self.SYNTHESIS_SECTION_KEYWORDS = {
-            "performance", "analysis", "conclusion", "discussion", "results",
+            "performance", "introduction", "analysis", "conclusion", "discussion", "results",
             "result", "comparison", "summary", "evaluation", "overview"
         }
 
@@ -91,15 +92,14 @@ class FastTreeRetriever:
             current_node = self.flattened_nodes[idx]
 
             if is_figure:
+                if current_node["node_id"] not in seen_ids:
+                    seen_ids.add(current_node["node_id"])
+                    final_node_ids.append(current_node["node_id"])
                 if idx > 0:
                     prev_node = self.flattened_nodes[idx - 1]
                     if prev_node["node_id"] not in seen_ids:
                         seen_ids.add(prev_node["node_id"])
                         final_node_ids.append(prev_node["node_id"])
-
-                if current_node["node_id"] not in seen_ids:
-                    seen_ids.add(current_node["node_id"])
-                    final_node_ids.append(current_node["node_id"])
 
             elif is_table:
                 if current_node["node_id"] not in seen_ids:
@@ -165,14 +165,15 @@ Available Candidate Nodes:
 {json.dumps(candidate_catalog, ensure_ascii=False, indent=2)}
 
 Instructions:
-1. For comparative, evaluation, or summary questions, ensure you select synthesis or conclusion nodes.
-2. Return ONLY a single valid JSON object with NO extra text or markdown fences.
-3. Use the exact valid node_id values listed above.
+1. Order node_list from MOST relevant to LEAST relevant — the first ID must be the single best match.
+2. For comparative, evaluation, or summary questions, ensure you select synthesis or conclusion nodes.
+3. Return ONLY a single valid JSON object with NO extra text or markdown fences.
+4. Use the exact valid node_id values listed above.
 
 JSON Format:
 {{
   "thinking": "Short 1-sentence reasoning",
-  "node_list": ["node_id_1", "node_id_2"]
+  "node_list": ["most_relevant_id", "second_most_relevant_id"]
 }}
 """
 
@@ -182,7 +183,7 @@ JSON Format:
                 messages=[{"role": "user", "content": prompt}],
                 options={
                     "temperature": 0.0,
-                    "num_ctx": 1024,
+                    "num_ctx": 1524,
                     "num_predict": 128,
                     "keep_alive": "10m",
                 }

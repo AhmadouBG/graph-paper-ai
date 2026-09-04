@@ -79,4 +79,4 @@ def test_vectorless_rag_pipeline(golden):
         ContextualRelevancyMetric(threshold=0.6, model=bedrock_judge, async_mode=True),
     ]
 
-    assert_test(test_case, metrics, run_async=True)
+    assert_test(test_case, metrics, run_async=True)

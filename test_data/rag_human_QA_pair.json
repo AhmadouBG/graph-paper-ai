@@ -80,21 +80,21 @@
         }
     },
     {
-        "input": "Why do lower and higher degree polynomial functions perform poorly in the Support Vector Regression model according to the text?",
+        "input": "What alternative machine learning methods do the authors propose to address the subjective nature of admissions in future work?",
         "actual_output": null,
-        "expected_output": "Lower degree polynomial functions tend to underfit the model and therefore do not provide satisfactory results. With increasing degree of the polynomial, the curve is fit better. However, if the degree increases beyond a certain limit, the model tends to overfit and results in lack of generalization.",
+        "expected_output": "The authors aim to expand their dataset and increase the number of profiles with variations. They also intend to use Deep Neural Networks as another plausible model to understand the subjective nature of admission.",
         "retrieval_context": null,
         "context": [
-            "Lower degree polynomial functions tend to underfit the model and therefore do not provide satisfactory results. With increasing degree of the polynomial, the curve is fit better. However, if the degree increases beyond a certain limit, the model tends to overfit and results in lack of generalization. Based on the results obtained from the table below, we demonstrate that higher degree polynomials overfit and have a larger MSE."
+            "We have been successful in developing an original solution that gives satisfactory results for the dataset used. As indicated, we aim to expand our dataset and increase the number of profiles with some variations. The number of outliers (profiles that do not seem impressive but had a high chance of admission) would be significantly increased to reduce the linear dependency of features. We will also use Deep Neural Networks as another plausible model to understand the subjective nature of admission."
         ],
-        "name": "SVR Polynomial Behavior",
-        "comments": "Reasoning question extracted from Section IV-B text.",
+        "name": "Future Work Plans",
+        "comments": "Extracted from Section VI (Scope and Future Work).",
         "source_file": "acharya2019.pdf",
         "tools_called": null,
         "expected_tools": null,
         "additional_metadata": {
             "evolutions": [
-                "Causal Reasoning"
+                "Future Intentions Expansion"
             ],
             "synthetic_input_quality": 1.0
         }
@@ -115,6 +115,106 @@
         "additional_metadata": {
             "evolutions": [
                 "Constrained Choice"
+            ],
+            "synthetic_input_quality": 1.0
+        }
+    },
+    {
+        "input": "Under what max feature condition is the Mean-Squared Error (MSE) lowest for the Decision Tree Regression model?",
+        "actual_output": null,
+        "expected_output": "MSE is least for a Decision Tree having only square root number of maximum features. The exact MSE value under this condition is 0.00874299.",
+        "retrieval_context": null,
+        "context": [
+            "TABLE V. NUMBER OF FEATURES v/s MSE\n- Max_Features: 0.01108793\n- Sqrt (Max_Features): 0.00874299\n- Log2 (Max_Features): 0.00984356\n\nMSE is least for a Decision Tree having only square root number of maximum features. ... R2 Score for square root is 0.5 which is considerably higher than the default number of features."
+        ],
+        "name": "Decision Tree Feature Optimization",
+        "comments": "Correlating Section IV-C text with Table V.",
+        "source_file": "acharya2019.pdf",
+        "tools_called": null,
+        "expected_tools": null,
+        "additional_metadata": {
+            "evolutions": [
+                "Comparative Evaluation"
+            ],
+            "synthetic_input_quality": 1.0
+        }
+    },
+    {
+        "input": "How many estimators are chosen for the Random Forest Regression model, and why?",
+        "actual_output": null,
+        "expected_output": "We consider 225 estimators for our model. This is because, as evident from the plot, MSE is lowest for 225 estimators, and it steadily increases afterwards.",
+        "retrieval_context": null,
+        "context": [
+            "Generally, higher the number of estimators, better is the predictive performance of the model. However, it is evident from the plot that MSE is lowest for 225 estimators. MSE steadily increases afterwards. Therefore, we consider 225 estimators for our model."
+        ],
+        "name": "Random Forest Estimators",
+        "comments": "Extracted from Section IV-D explanation of Figure 6.",
+        "source_file": "acharya2019.pdf",
+        "tools_called": null,
+        "expected_tools": null,
+        "additional_metadata": {
+            "evolutions": [
+                "Justification Inquiry"
+            ],
+            "synthetic_input_quality": 1.0
+        }
+    },
+    {
+        "input": "What output value does the best performing model predict for an unseen applicant profile with scores [324, 110, 4, 4, 5, 9.04, 1]?",
+        "actual_output": null,
+        "expected_output": "The profile of an applicant with the test scores [324,110,4,4,5,9.04,1] evaluates to an output prediction of 0.82.",
+        "retrieval_context": null,
+        "context": [
+            "We evaluated additional profiles (unseen data) using Linear Regression, our best performing model to see how well it performs. The profile of an applicant with the test scores, starting from GRE and TOEFL, College Ranking, Statement of Purpose, Letter of Recommendation, GPA and Research Experience is displayed as follows: [324,110,4,4,5,9.04,1] -> 0.82"
+        ],
+        "name": "Unseen Data Prediction",
+        "comments": "Tests ability to extract factual array outputs from Section V.",
+        "source_file": "acharya2019.pdf",
+        "tools_called": null,
+        "expected_tools": null,
+        "additional_metadata": {
+            "evolutions": [
+                "Specific Extraction"
+            ],
+            "synthetic_input_quality": 1.0
+        }
+    },
+    {
+        "input": "What consequences do prospective graduate students face when misinformed during the university shortlisting process, according to the authors?",
+        "actual_output": null,
+        "expected_output": "A majority of students applying to master’s programs face difficulty in shortlisting universities either because they are not aware of university rankings or would have been misinformed by seniors and fellow applicants. This often results in students missing out on admissions and leads to a complete wastage of resources.",
+        "retrieval_context": null,
+        "context": [
+            "A majority of students applying to master’s programs face difficulty in shortlisting universities either because they are not aware of university rankings or would have been misinformed by seniors and fellow applicants. This often results in students missing out on admissions and leads to a complete wastage of resources."
+        ],
+        "name": "Problem Statement / Impact",
+        "comments": "Extracted from Section I (Introduction) highlighting the paper's core motivation.",
+        "source_file": "acharya2019.pdf",
+        "tools_called": null,
+        "expected_tools": null,
+        "additional_metadata": {
+            "evolutions": [
+                "Contextual Impact"
+            ],
+            "synthetic_input_quality": 1.0
+        }
+    },
+    {
+        "input": "What is the primary aim of the study presented in this paper?",
+        "actual_output": null,
+        "expected_output": "The primary aim of this study is to leverage machine learning to build an application that predicts the university of choice for a prospective graduate student.",
+        "retrieval_context": null,
+        "context": [
+            "We developed a plausible solution for the problem keeping in mind the rising need for the same, we introduce a new interface that will help prospective graduate students in selecting the best universities for themselves. A majority of students applying to master’s programs face difficulty in shortlisting universities... This paper aims to leverage machine learning to build an application that predicts the university of choice for a prospective graduate student."
+        ],
+        "name": "Research Aim",
+        "comments": "Tests extraction of the main goal/objective from the Introduction.",
+        "source_file": "acharya2019.pdf",
+        "tools_called": null,
+        "expected_tools": null,
+        "additional_metadata": {
+            "evolutions": [
+                "Descriptive"
             ],
             "synthetic_input_quality": 1.0
         }

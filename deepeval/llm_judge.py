@@ -76,7 +76,7 @@ class NvidiaJudgeModel(DeepEvalBaseLLM):
         self,
         model: str = "openai/gpt-oss-120b",
         reasoning_effort: str = "low",   # "low" | "medium" | "high" — low is plenty for verdict/reason JSON
-        max_tokens: int = 1536,          # JSON verdicts don't need 4096
+        max_tokens: int = 2048,          # JSON verdicts don't need 4096
     ):
         self.model_name = model
         self.reasoning_effort = reasoning_effort
@@ -124,7 +124,7 @@ class NvidiaJudgeModel(DeepEvalBaseLLM):
                 completion = self.client.chat.completions.create(
                     model=self.model_name,
                     messages=messages,
-                    temperature=0.1,
+                    temperature=0.5,
                     top_p=1,
                     max_tokens=self.max_tokens,
                     reasoning_effort=self.reasoning_effort,
@@ -159,7 +159,7 @@ class NvidiaJudgeModel(DeepEvalBaseLLM):
                     completion = await self.async_client.chat.completions.create(
                         model=self.model_name,
                         messages=messages,
-                        temperature=0.1,
+                        temperature=0.5,
                         top_p=1,
                         max_tokens=self.max_tokens,
                         reasoning_effort=self.reasoning_effort,
@@ -215,4 +215,4 @@ class NvidiaJudgeModel(DeepEvalBaseLLM):
 
 
 # Singleton judge instance — imported by other deepeval files
-bedrock_judge = NvidiaJudgeModel(reasoning_effort="low", max_tokens=1536)
+bedrock_judge = NvidiaJudgeModel(reasoning_effort="low", max_tokens=2048)
