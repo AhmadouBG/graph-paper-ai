@@ -57,12 +57,12 @@ GLOBAL_TREE = _get_or_build_tree()
 
 # Load and filter dataset
 dataset = EvaluationDataset()
-dataset.add_goldens_from_json_file(file_path="./test_data/rag_test_dataset.json")
+dataset.add_goldens_from_json_file(file_path="./test_data/rag_human_QA_pair.json")
 
 dataset.goldens = [
     g for g in dataset.goldens
     if g.additional_metadata is None
-    or g.additional_metadata.get("synthetic_input_quality", 1.0) >= 0.5
+    or g.additional_metadata.get("synthetic_input_quality", 1.0) >= 0.7
 ]
 
 # Build test cases
@@ -78,20 +78,18 @@ for golden in dataset.goldens:
 
 # Run evaluation with concurrent async execution
 metrics = [
-    FaithfulnessMetric(threshold=0.6, model=bedrock_judge, include_reason=True, async_mode=True),
-    AnswerRelevancyMetric(threshold=0.6, model=bedrock_judge, async_mode=True),
-    ContextualPrecisionMetric(threshold=0.6, model=bedrock_judge, async_mode=True),
-    ContextualRecallMetric(threshold=0.6, model=bedrock_judge, async_mode=True),
-    ContextualRelevancyMetric(threshold=0.6, model=bedrock_judge, async_mode=True),
+    FaithfulnessMetric(threshold=0.7, model=bedrock_judge, include_reason=True, async_mode=True),
+    AnswerRelevancyMetric(threshold=0.7, model=bedrock_judge, async_mode=True),
+    ContextualPrecisionMetric(threshold=0.7, model=bedrock_judge, async_mode=True),
+    ContextualRecallMetric(threshold=0.7, model=bedrock_judge, async_mode=True),
+    ContextualRelevancyMetric(threshold=0.7, model=bedrock_judge, async_mode=True),
 ]
 
 evaluate(
     test_cases=test_cases,
     metrics=metrics,
     async_config=AsyncConfig(
-        run_async=True,
-        max_concurrent=2,      # Process 1 test case at a time to prevent API rate limiting & timeouts
-        throttle_value=1,      # 2s delay between test cases
+        run_async=False,
     ),
     display_config=DisplayConfig(
         print_results=True,

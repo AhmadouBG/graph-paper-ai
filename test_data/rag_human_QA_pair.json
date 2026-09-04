@@ -1,0 +1,122 @@
+[
+    {
+        "input": "List the paper's type, date, DOI, authors, primary author's affiliation, citation and read counts.",
+        "actual_output": null,
+        "expected_output": "Type: Conference Paper; Date: February 2019; DOI: 10.1109/ICCIDS.2019.8862140; Authors: Aneeta S Antony et al.; Primary author affiliation: New Horizon College of Engineering; Citations: 137; Reads: 6,854.",
+        "retrieval_context": null,
+        "context": [
+            "See discussions, stats, and author profiles for this publication at: https://www.researchgate.net/publication/336436894\n\n# A Comparison of Regression Models for Prediction of Graduate Admissions\n\nConference Paper · February 2019\n\nDOI: 10.1109/ICCIDS.2019.8862140\n\n<table>\n    <tr>\n        <th>CITATIONS</th>\n        <th>READS</th>\n    </tr>\n    <tr>\n        <td>137</td>\n        <td>6,854</td>\n    </tr>\n</table>\n\n3 authors, including:\n\nAneeta S Antony\n\nNew Horizon College of Engineering\n\n**1** PUBLICATION **137** CITATIONS\n\nSEE PROFILE"
+        ],
+        "name": "Metadata Extraction",
+        "comments": "Extracted from publication header details.",
+        "source_file": "acharya2019.pdf",
+        "tools_called": null,
+        "expected_tools": null,
+        "additional_metadata": {
+            "evolutions": [
+                "Constrained"
+            ],
+            "synthetic_input_quality": 1.0
+        }
+    },
+    {
+        "input": "According to the final performance analysis, which regression model performed the best and what were its exact metrics?",
+        "actual_output": null,
+        "expected_output": "Linear Regression performed the best on the dataset. Its exact evaluation metrics were a Mean Squared Error (MSE) of 0.00480149 and an R2 Score of 0.72486310.",
+        "retrieval_context": null,
+        "context": [
+            "TABLE VII. PERFORMANCE ANALYSIS\n\n<table>\n  <thead>\n    <tr>\n        <th>Regression Models</th>\n        <th>MSE</th>\n        <th>R2 Score</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n        <td>Linear Regression</td>\n        <td>0.00480149</td>\n        <td>0.72486310</td>\n    </tr>\n    <tr>\n        <td>Support Vector Regression</td>\n        <td>0.00724206</td>\n        <td>0.64401301</td>\n    </tr>\n    <tr>\n        <td>Decision Tree Regression</td>\n        <td>0.00874299</td>\n        <td>0.50134421</td>\n    </tr>\n  </tbody>\n</table>\n\nIt is clear that Linear Regression performs the best on our dataset, with a low MSE and high R2 score, closely followed by Random Forest."
+        ],
+        "name": "Best Model Identification",
+        "comments": "Verifies precise metrics from Table VII and conclusion text.",
+        "source_file": "acharya2019.pdf",
+        "tools_called": null,
+        "expected_tools": null,
+        "additional_metadata": {
+            "evolutions": [
+                "Direct Inquiry"
+            ],
+            "synthetic_input_quality": 1.0
+        }
+    },
+    {
+        "input": "What unique features and specific criteria parameters are contained within the dataset used by the authors?",
+        "actual_output": null,
+        "expected_output": "The first section contains scores including GRE, TOEFL and Undergraduate GPA. Statement of Purpose and Letter of Recommendation are two other important entities. Research Experience is highlighted in binary form. A unique feature of this dataset is that it contains equal number of categorical and numerical features.",
+        "retrieval_context": null,
+        "context": [
+            "This dataset contains parameters that are considered carefully by the admissions committee. First section contains scores including GRE, TOEFL and Undergraduate GPA. Statement of Purpose and Letter of Recommendation are two other important entities. Research Experience is highlighted in binary form. All the parameters are normalized before training to ensure that values lie between the specified range. A few profiles in the dataset contain values that have been previously obtained by students. A unique feature of this dataset is that it contains equal number of categorical and numerical features."
+        ],
+        "name": "Dataset Schema and Features",
+        "comments": "Extracted from Section II (Dataset).",
+        "source_file": "acharya2019.pdf",
+        "tools_called": null,
+        "expected_tools": null,
+        "additional_metadata": {
+            "evolutions": [
+                "Descriptive"
+            ],
+            "synthetic_input_quality": 1.0
+        }
+    },
+    {
+        "input": "What train-test split ratio was applied to the Linear Regression model, and what was its resulting R2 Score?",
+        "actual_output": null,
+        "expected_output": "The dataset was evaluated using the Linear Regression Model with a train test split of 0.25. The resulting R2 Score obtained was 0.72486310.",
+        "retrieval_context": null,
+        "context": [
+            "We evaluate our dataset using the Linear Regression Model with a train test split of 0.25. The evaluation metrics obtained are as follows.\n\nTABLE I. EVALUATION METRIC FOR LINEAR REGRESSION\nValue for R2 Score: 0.72486310"
+        ],
+        "name": "Linear Regression Splits",
+        "comments": "Requires finding the explicit split configuration in Section IV-A.",
+        "source_file": "acharya2019.pdf",
+        "tools_called": null,
+        "expected_tools": null,
+        "additional_metadata": {
+            "evolutions": [
+                "Hyperparameter extraction"
+            ],
+            "synthetic_input_quality": 1.0
+        }
+    },
+    {
+        "input": "Why do lower and higher degree polynomial functions perform poorly in the Support Vector Regression model according to the text?",
+        "actual_output": null,
+        "expected_output": "Lower degree polynomial functions tend to underfit the model and therefore do not provide satisfactory results. With increasing degree of the polynomial, the curve is fit better. However, if the degree increases beyond a certain limit, the model tends to overfit and results in lack of generalization.",
+        "retrieval_context": null,
+        "context": [
+            "Lower degree polynomial functions tend to underfit the model and therefore do not provide satisfactory results. With increasing degree of the polynomial, the curve is fit better. However, if the degree increases beyond a certain limit, the model tends to overfit and results in lack of generalization. Based on the results obtained from the table below, we demonstrate that higher degree polynomials overfit and have a larger MSE."
+        ],
+        "name": "SVR Polynomial Behavior",
+        "comments": "Reasoning question extracted from Section IV-B text.",
+        "source_file": "acharya2019.pdf",
+        "tools_called": null,
+        "expected_tools": null,
+        "additional_metadata": {
+            "evolutions": [
+                "Causal Reasoning"
+            ],
+            "synthetic_input_quality": 1.0
+        }
+    },
+    {
+        "input": "What degree of polynomial was chosen for the SVR model problem, and what exact R-Squared score did it secure?",
+        "actual_output": null,
+        "expected_output": "For our problem, a polynomial of degree three is chosen. The R-Squared score obtained is 0.64.",
+        "retrieval_context": null,
+        "context": [
+            "The MSE increases exponentially for degrees higher than eight. R-Squared score is negative for polynomials with degree greater than five. For our problem, a polynomial of degree three is chosen. The R-Squared score obtained is 0.64"
+        ],
+        "name": "SVR Degree Selection",
+        "comments": "Extracted from explicit choices listed below Table III.",
+        "source_file": "acharya2019.pdf",
+        "tools_called": null,
+        "expected_tools": null,
+        "additional_metadata": {
+            "evolutions": [
+                "Constrained Choice"
+            ],
+            "synthetic_input_quality": 1.0
+        }
+    }
+]
