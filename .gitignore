@@ -5,7 +5,6 @@
 /.agents
 /.agent
 /.opencode
-/.github
 .env
 docs
 /venv

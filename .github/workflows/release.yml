@@ -1,0 +1,122 @@
+name: CD — Release & Publish Image
+
+on:
+  push:
+    tags:
+      - "v*.*.*"   # triggers on tags like v1.0.0, v2.3.1, etc.
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ─── 1. Run tests before building ────────────────────────────────────────────
+  test:
+    name: 🧪 Pre-release Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install --no-cache-dir -r requirements.txt
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short -m "not integration"
+
+  # ─── 2. Build & push Docker image to ghcr.io ─────────────────────────────────
+  build-and-push:
+    name: 🐳 Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      image_digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ─── 3. Create GitHub Release with auto-generated changelog ──────────────────
+  github-release:
+    name: 📦 Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0   # full history for changelog generation
+
+      - name: Generate changelog & create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true   # auto-generates from merged PRs & commits
+          body: |
+            ## Docker Image
+
+            Pull the image from GitHub Container Registry:
+
+            ```bash
+            docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ```
+
+            Or run with Docker Compose:
+
+            ```bash
+            docker compose up
+            ```
+
+            ---
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+# Create and push a version tag — that's the ONLY trigger
+#git tag v1.0.0
+#git push origin v1.0.0
+
+# Or for a patch/minor/major bump:
+#git tag v1.0.1   # patch
+#git tag v1.1.0   # minor
+#git tag v2.0.0   # major
+#git push origin --tags
