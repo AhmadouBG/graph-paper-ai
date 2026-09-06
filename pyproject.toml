@@ -19,7 +19,10 @@ select = ["E", "F", "I", "N", "W"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = ["test_*.py"]
+python_files = ["test_*.py", "*_test.py"]   # covers vectorless_rag_test.py
+markers = [
+  "integration: marks tests that require external services (API keys, Ollama, LlamaCloud, AWS) — skipped in CI",
+]
 
 # python parse_pdf.py paper.pdf              # PyMuPDF (fast, default)
 # python parse_pdf.py paper.pdf --marker      # Marker (higher quality, may download models)

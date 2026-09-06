@@ -15,3 +15,5 @@ docs
 /output
 /.ruff_cache
 /.pytest_cache
+/evals/rag-pipeline
+/.deepeval
