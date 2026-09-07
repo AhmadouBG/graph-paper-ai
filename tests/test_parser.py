@@ -101,9 +101,10 @@ def test_tree_root_nodes_have_required_keys():
     for node in tree:
         assert required.issubset(node.keys()), f"Node missing keys: {node.keys()}"
 
+
 def test_tree_introduction_node_exists():
     tree = _build_pure_text_tree(SIMPLE_MARKDOWN)
-    
+
     # Fonction pour aplatir tous les titres de l'arbre imbriqué
     def get_all_titles(nodes):
         titles = []
@@ -151,7 +152,7 @@ def test_tree_nested_children():
 def test_tree_deduplicate_h1_titles():
     md = "# Introduction\n\nFirst.\n\n# Introduction\n\nDuplicate.\n"
     tree = _build_pure_text_tree(md)
-    
+
     # Fonction pour récupérer tous les nœuds de l'arbre
     def flatten_nodes(nodes):
         flat = []
@@ -163,7 +164,7 @@ def test_tree_deduplicate_h1_titles():
 
     all_nodes = flatten_nodes(tree)
     intro_nodes = [n for n in all_nodes if "Introduction" in n["title"]]
-    
+
     assert len(intro_nodes) == 1, "Duplicate H1 title should be deduplicated"
 
 
