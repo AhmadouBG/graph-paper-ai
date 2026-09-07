@@ -1,19 +1,16 @@
 from __future__ import annotations
-
-
+import hashlib
 import logging
 from pathlib import Path
 import re
 from dotenv import load_dotenv
+from llama_cloud import LlamaCloud
 
 logger = logging.getLogger(__name__)
 load_dotenv()
 
-import hashlib
-from llama_cloud import LlamaCloud
-
 def _calculate_file_hash(file_path: str) -> str:
-    """Calcule l'empreinte unique (SHA-256) du fichier temporaire."""
+    """Calculate the unique fingerprint (SHA-256) of the temporary file."""
     hasher = hashlib.sha256()
     with open(file_path, "rb") as f:
         for chunk in iter(lambda: f.read(4096), b""):
@@ -21,71 +18,69 @@ def _calculate_file_hash(file_path: str) -> str:
     return hasher.hexdigest()
 
 def _parse_with_llamacloud(pdf_path: str, api_key: str, project_id: str = None) -> list[dict]:
-    # 1. Initialisation du client
-    client = LlamaCloud(api_key=api_key)
-    
-    # 2. Récupération du hash unique du fichier temporaire
+    # 1. Initialisation of the client
+    client = LlamaCloud(api_key=api_key)    
+    # 2. Getting the unique hash of the temporary file
     file_hash = _calculate_file_hash(pdf_path)
     uploaded_file_id = None
-
-    print(f"Recherche du fichier dans le projet LlamaCloud (Project ID: {project_id or 'Défaut'})...")
-    
-    # 3. Lister les fichiers uniquement au sein du projet ciblé
-    # Note: On passe project_id dans les filtres si l'API du SDK le permet, 
-    # ou on filtre manuellement les attributs de file_info
+    print(f"""Searching for the file in LlamaCloud 
+                        (Project ID: {project_id or 'Default'})...""")
+    # 3. Listing files only within the target project
+    # Note: Pass project_id in the filters if the SDK API allows, 
+    # or manually filter the file_info attributes
     files_list = client.files.list(project_id=project_id) if project_id else client.files.list()
-    
     for file_info in files_list:
-        # 1. Vérification primaire via le hash stocké dans external_file_id
+        # 1. Primary verification via the hash stored in external_file_id
         if getattr(file_info, "external_file_id", None) == file_hash:
             uploaded_file_id = file_info.id
-            print(f"✨ Fichier identique trouvé dans le projet via hash (ID: {uploaded_file_id}). Cache activé !")
+            print(f"""✨ Identical file found in the project via hash 
+                    (ID: {uploaded_file_id}). Cache activated!""")
             break
-        # 2. Vérification secondaire (fallback) via le nom exact du fichier original
+        # 2. Secondary verification (fallback) via the exact name of the original file
         elif getattr(file_info, "name", None) == Path(pdf_path).name:
             uploaded_file_id = file_info.id
-            print(f"✨ Fichier identique trouvé dans le projet via le nom (ID: {uploaded_file_id}). Cache activé !")
+            print(f"""✨ Identical file found in the project via name 
+                    (ID: {uploaded_file_id}). Cache activated!""")
             break
 
-    # 4. Si absent du projet, on le téléverse au bon endroit
+    # 4. If absent from the project, upload it to the correct location
     if not uploaded_file_id:
-        print(f"Téléversement du fichier temporaire vers le projet...")
+        print("Uploading temporary file to the project...")
         uploaded_file = client.files.create(
             file=Path(pdf_path), 
             purpose="parse",
-            project_id=project_id, # Associe explicitement le fichier au projet
-            external_file_id=file_hash # Associe le hash unique du fichier
+            project_id=project_id, # Explicitly associates the file with the project
+            external_file_id=file_hash # Associates the unique hash of the file
         )
         uploaded_file_id = uploaded_file.id
-
-    # 5. Extraction via l'Agentic Tier (Bénéficie du cache si l'ID existait déjà)
-    print("Démarrage du parsing agentique...")
+    # 5. Extraction via the Agentic Tier (Benefits from the cache if the ID already existed)
+    print("Starting agentic parsing...")
     result = client.parsing.parse(
         file_id=uploaded_file_id,
         tier="agentic",
         version="latest",
         expand=["markdown"]
     )
-
-    # 6. Extraction des pages
+    # 6. Extraction of the pages
     pages_data = []
     if hasattr(result, "markdown") and result.markdown and hasattr(result.markdown, "pages"):
         pages = result.markdown.pages
     else:
         result_dict = result.dict() if hasattr(result, "dict") else vars(result)
         pages = result_dict.get("markdown", {}).get("pages", [])
-
     for p in pages:
-        p_status = getattr(p, "success", True) if not isinstance(p, dict) else p.get("success", True)
+        p_status = (getattr(p, "success", True) 
+                    if not isinstance(p, dict) else p.get("success", True))
         if p_status:
-            page_num = getattr(p, "page_number", None) if not isinstance(p, dict) else p.get("page_number")
-            md_content = getattr(p, "markdown", "") if not isinstance(p, dict) else p.get("markdown", "")
+            page_num = (getattr(p, "page_number", None) 
+                    if not isinstance(p, dict) else p.get("page_number"))
+            md_content = (getattr(p, "markdown", "") 
+                    if not isinstance(p, dict) else p.get("markdown", ""))
             pages_data.append({"page": page_num, "md": md_content or ""})
 
-    print(f"Parsing terminé. {len(pages_data)} pages extraites.")
+    print(f"Parsing finished. {len(pages_data)} pages extracted.")
     return pages_data
 
-import re
 
 # ── Granularity constants ──────────────────────────────────────────
 MAX_TOKENS_PER_NODE = 800          # ~3200 chars; keeps cohesive section context
@@ -206,7 +201,7 @@ def _build_pure_text_tree(markdown_text: str) -> list[dict]:
     for line in lines:
         cleaned_line = line.strip()
         if not cleaned_line:
-            if stack and any("</table" in l for l in stack[-1]["node"]["content_lines"][-5:]):
+            if stack and any("</table" in  line_of_content for line_of_content in stack[-1]["node"]["content_lines"][-5:]):
                 stack[-1]["node"]["content_lines"].append("")
             continue
 

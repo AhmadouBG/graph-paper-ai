@@ -1,27 +1,26 @@
-# report.py
+import json
 import os
 import sys
-import json
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from dotenv import load_dotenv
-from deepeval import evaluate
 from deepeval.dataset import EvaluationDataset
-from deepeval.test_case import LLMTestCase
 from deepeval.metrics import (
-    FaithfulnessMetric,
     AnswerRelevancyMetric,
     ContextualPrecisionMetric,
     ContextualRecallMetric,
     ContextualRelevancyMetric,
+    FaithfulnessMetric,
 )
+from llm_judge import nvidia_judge
+from deepeval.evaluate import AsyncConfig, DisplayConfig
+from deepeval import evaluate
+from deepeval.test_case import LLMTestCase
+from dotenv import load_dotenv
 from src.extraction.parser import _parse_with_llamacloud, _build_pure_text_tree
 from src.pipeline import vectorless_rag_no_loss
-from llm_judge import bedrock_judge
-from deepeval.evaluate import AsyncConfig, DisplayConfig
 
 load_dotenv()
-
 
 def _get_or_build_tree() -> list[dict]:
     """Cache the parsed document tree locally to avoid PDF re-parsing on every report run."""
@@ -78,11 +77,11 @@ for golden in dataset.goldens:
 
 # Run evaluation with concurrent async execution
 metrics = [
-    FaithfulnessMetric(threshold=0.7, model=bedrock_judge, include_reason=True, async_mode=True),
-    AnswerRelevancyMetric(threshold=0.7, model=bedrock_judge, async_mode=True),
-    ContextualPrecisionMetric(threshold=0.7, model=bedrock_judge, async_mode=True),
-    ContextualRecallMetric(threshold=0.7, model=bedrock_judge, async_mode=True),
-    ContextualRelevancyMetric(threshold=0.7, model=bedrock_judge, async_mode=True),
+    FaithfulnessMetric(threshold=0.7, model=nvidia_judge, include_reason=True, async_mode=True),
+    AnswerRelevancyMetric(threshold=0.7, model=nvidia_judge, async_mode=True),
+    ContextualPrecisionMetric(threshold=0.7, model=nvidia_judge, async_mode=True),
+    ContextualRecallMetric(threshold=0.7, model=nvidia_judge, async_mode=True),
+    ContextualRelevancyMetric(threshold=0.7, model=nvidia_judge, async_mode=True),
 ]
 
 evaluate(

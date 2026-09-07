@@ -3,7 +3,6 @@
 /_bmad-output
 /.claude
 /.agents
-/.agent
 /.opencode
 .env
 docs

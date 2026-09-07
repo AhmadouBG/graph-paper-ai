@@ -5,11 +5,11 @@ from rank_bm25 import BM25Okapi
 
 class FastTreeRetriever:
     """
-    Routeur hybride à 3 passes pour Vectorless RAG :
-      - Passe A (Regex) : Détection instantanée (<1ms) pour Tables / Figures.
-      - Passe B (BM25)  : Pré-filtrage rapide des 6-8 meilleurs nœuds candidats.
-      - Passe C (SLM)   : Re-ranking sémantique par `qwen2.5:1.5b-instruct-q4_K_M`
-                         pour la sélection finale intelligente.
+    3-pass hybrid router for Vectorless RAG:
+      - Pass A (Regex): Instant detection (<1ms) for Tables / Figures.
+      - Pass B (BM25): Fast pre-filtering of the top 6-8 candidate nodes.
+      - Pass C (SLM): Semantic re-ranking by `qwen2.5:1.5b-instruct-q4_K_M`
+                         for intelligent final selection.
     """
 
     def __init__(self, tree: list, slm_model: str = "qwen2.5:1.5b-instruct-q4_K_M"):
@@ -17,16 +17,16 @@ class FastTreeRetriever:
         self.flattened_nodes = []
         self._flatten(tree)
 
-        # Pré-compilation de la regex globale pour la Passe A
+        # Pre-compilation of the global regex for Pass A
         self.visual_routing_pattern = re.compile(
             r'(?:(table)|(fig\.?|figure))\s+([a-zA-Z0-9_]+)', re.IGNORECASE
         )
 
-        # Initialisation unique du moteur BM25 (Passe B)
+        # Unique initialization of the BM25 engine (Pass B)
         self.corpus_tokens = []
         if self.flattened_nodes:
             for n in self.flattened_nodes:
-                # Pondération du titre intégrée dès l'indexation (doublement du titre)
+                # Title weighting integrated from indexing (title duplication)
                 node_text = f"{n['title']} {n['title']} {n.get('content', '')}"
                 self.corpus_tokens.append(self.tokenize(node_text))
             self.bm25 = BM25Okapi(self.corpus_tokens)
@@ -48,7 +48,7 @@ class FastTreeRetriever:
         self.COMPARATIVE_PHRASE_MIN_HITS = 2
         
     def _flatten(self, nodes: list[dict]) -> None:
-        """Met à plat l'arbre de nœuds de manière récursive."""
+        """Flattens the node tree recursively."""
         for n in nodes:
             self.flattened_nodes.append(n)
             if n.get("nodes"):
@@ -56,13 +56,13 @@ class FastTreeRetriever:
 
     @staticmethod
     def tokenize(text: str) -> list[str]:
-        """Nettoie et découpe le texte en tokens."""
+        """Cleans and tokenizes text."""
         text = text.lower()
         text = re.sub(r'[^\w\s]', ' ', text)
         return text.split()
 
     def find_visual_element_by_regex(self, query: str, top_k: int = 3) -> list[str]:
-        """Passe A optimisée : Détection déterministe par Regex."""
+        """Optimized Pass A: Deterministic detection by Regex."""
         cleaned_query = re.sub(r'\s+', ' ', query.lower().strip())
         match = self.visual_routing_pattern.search(cleaned_query)
 
@@ -116,8 +116,8 @@ class FastTreeRetriever:
 
         return final_node_ids[:top_k]
 
-    def _bm25_candidate_filter(self, query: str, max_candidates: int = 6) -> list[dict]:
-        """Passe B : BM25 pré-filtre les nœuds pour créer une sélection restreinte."""
+    def _bm25_candidate_filter(self, query: str, max_candidates: int = 5) -> list[dict]:
+        """Passe B : BM25 filtrers nodes pour créer une sélection restreinte."""
         if not self.bm25:
             return self.flattened_nodes[:max_candidates]
 
@@ -144,8 +144,8 @@ class FastTreeRetriever:
 
     def _slm_rerank(self, query: str, candidates: list[dict], top_k: int = 3) -> dict:
         """
-        Passe C : Utilise qwen2.5:1.5b-instruct-q4_K_M pour sélectionner les meilleurs
-        nœuds parmi les candidats filtrés.
+        Passe C : Use qwen2.5:1.5b-instruct-q4_K_M to select the best
+        nodes among the filtered candidates.
         """
         candidate_catalog = []
         valid_ids = set()

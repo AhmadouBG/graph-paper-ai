@@ -1,27 +1,26 @@
+import json
 import os
 import sys
-import json
 import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from dotenv import load_dotenv
-from deepeval import assert_test
 from deepeval.dataset import EvaluationDataset
-from deepeval.test_case import LLMTestCase
 from deepeval.metrics import (
-    FaithfulnessMetric,
     AnswerRelevancyMetric,
     ContextualPrecisionMetric,
     ContextualRecallMetric,
     ContextualRelevancyMetric,
+    FaithfulnessMetric,
 )
+from deepeval.test_case import LLMTestCase
+from dotenv import load_dotenv
+from deepeval import assert_test
 from src.extraction.parser import _parse_with_llamacloud, _build_pure_text_tree
 from src.pipeline import vectorless_rag_no_loss
-from llm_judge import bedrock_judge
+from llm_judge import nvidia_judge
 
 load_dotenv()
-
 
 def _get_or_build_tree() -> list[dict]:
     """Cache the parsed document tree locally to avoid PDF re-parsing on every test run."""
@@ -72,11 +71,11 @@ def test_vectorless_rag_pipeline(golden):
 
     # async_mode=True executes metric requests concurrently, cutting test runtime by 70%
     metrics = [
-        FaithfulnessMetric(threshold=0.6, model=bedrock_judge, async_mode=True),
-        AnswerRelevancyMetric(threshold=0.6, model=bedrock_judge, async_mode=True),
-        ContextualPrecisionMetric(threshold=0.6, model=bedrock_judge, async_mode=True),
-        ContextualRecallMetric(threshold=0.6, model=bedrock_judge, async_mode=True),
-        ContextualRelevancyMetric(threshold=0.6, model=bedrock_judge, async_mode=True),
+        FaithfulnessMetric(threshold=0.6, model=nvidia_judge, async_mode=True),
+        AnswerRelevancyMetric(threshold=0.6, model=nvidia_judge, async_mode=True),
+        ContextualPrecisionMetric(threshold=0.6, model=nvidia_judge, async_mode=True),
+        ContextualRecallMetric(threshold=0.6, model=nvidia_judge, async_mode=True),
+        ContextualRelevancyMetric(threshold=0.6, model=nvidia_judge, async_mode=True),
     ]
 
     assert_test(test_case, metrics, run_async=True)

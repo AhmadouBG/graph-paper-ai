@@ -1,14 +1,14 @@
 # llm_judge.py
+import asyncio
+import json
 import os
 import re
-import json
-import time
-import asyncio
 import threading
+import time
 from collections import deque
-from openai import OpenAI, AsyncOpenAI
-from dotenv import load_dotenv
 from deepeval.models.base_model import DeepEvalBaseLLM
+from dotenv import load_dotenv
+from openai import AsyncOpenAI, OpenAI
 
 load_dotenv()
 
@@ -75,8 +75,8 @@ class NvidiaJudgeModel(DeepEvalBaseLLM):
     def __init__(
         self,
         model: str = "openai/gpt-oss-120b",
-        reasoning_effort: str = "low",   # "low" | "medium" | "high" — low is plenty for verdict/reason JSON
-        max_tokens: int = 2048,          # JSON verdicts don't need 4096
+        reasoning_effort: str = "low", 
+        max_tokens: int = 2048,          
     ):
         self.model_name = model
         self.reasoning_effort = reasoning_effort
@@ -137,7 +137,8 @@ class NvidiaJudgeModel(DeepEvalBaseLLM):
             except Exception as e:
                 if "429" in str(e) or "RateLimit" in type(e).__name__:
                     wait_time = (attempt + 1) * 6
-                    print(f"⚠️ Rate limit hit (429). Retrying in {wait_time}s... (attempt {attempt+1}/8)")
+                    print(f"⚠️ Rate limit hit (429). Retrying in {wait_time}s... "
+                          f"(attempt {attempt+1}/8)")
                     time.sleep(wait_time)
                 else:
                     raise e
@@ -172,7 +173,8 @@ class NvidiaJudgeModel(DeepEvalBaseLLM):
                 except Exception as e:
                     if "429" in str(e) or "RateLimit" in type(e).__name__:
                         wait_time = (attempt + 1) * 6
-                        print(f"⚠️ Async Rate limit hit (429). Retrying in {wait_time}s... (attempt {attempt+1}/8)")
+                        print(f"⚠️ Async Rate limit hit (429). Retrying in {wait_time}s... "
+                              f"(attempt {attempt+1}/8)")
                         await asyncio.sleep(wait_time)
                     else:
                         raise e
@@ -213,6 +215,4 @@ class NvidiaJudgeModel(DeepEvalBaseLLM):
     def get_model_name(self) -> str:
         return self.model_name
 
-
-# Singleton judge instance — imported by other deepeval files
-bedrock_judge = NvidiaJudgeModel(reasoning_effort="low", max_tokens=2048)
+nvidia_judge = NvidiaJudgeModel(reasoning_effort="low", max_tokens=2048)

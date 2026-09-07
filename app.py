@@ -1,14 +1,14 @@
+import io
 import logging
 import os
+import sys
 import tempfile
 import ollama
 import streamlit as st
 from dotenv import load_dotenv
-import io
-import sys
-from src.utils.dictionary import DICTIONARY
 from src.extraction.parser import _build_pure_text_tree, _parse_with_llamacloud
 from src.pipeline import vectorless_rag_no_loss, print_tree, get_total_pages
+from src.utils.dictionary import DICTIONARY
 
 load_dotenv()
 
@@ -108,17 +108,15 @@ def run_pipeline(pdf_path: str) -> list[dict]:
     with st.spinner("📖 Extraction du PDF avec LlamaCloud (Agentic)..."):
         page_dicts = _parse_with_llamacloud(pdf_path, api_key)
 
-    # Reconstruction linéaire propre avec balises de pages pour le constructeur d'arbre
+    # Re build Markdown with page markers for tree builder
     markdown_chunks = []
     for page_data in page_dicts:
         page_num = page_data["page"]
         markdown_chunks.append(f"--- Page {page_num} ---")
         markdown_chunks.append(page_data.get("md", ""))
     markdown_content = "\n".join(markdown_chunks)
-    
     with st.spinner("🌲 Structuration de l'arbre documentaire..."):
         tree = _build_pure_text_tree(markdown_content)
-    #print("="*60 + "\n" + str(tree) + "\n" + "="*60 + "\n")
     return tree
 
 def check_ollama(model: str) -> bool:
@@ -137,18 +135,18 @@ def count_nodes(nodes: list[dict]) -> int:
             c += count_nodes(n["nodes"])
     return c
 
-# ── Initialisation du Session State ───────────────────────────────────────────
+# ── Initialize session state ───────────────────────────────────────────
 for key, default in [
     ("tree", None),
     ("messages", []),
     ("pdf_name", ""),
     ("processing", False),
-    ("lang", "fr"), # Ajout de la langue par défaut
+    ("lang", "fr"),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
 
-# Raccourci d'écriture des traductions
+# short cut for writing translations
 t = DICTIONARY[st.session_state.lang]
 
 def toggle_language():
@@ -171,14 +169,18 @@ with st.sidebar:
     col_a, col_b = st.columns(2)
     with col_a:
         if ollama_ok:
-            st.markdown(f'<span class="status-ok">{t["status_ollama_ok"]}</span>', unsafe_allow_html=True)
+            st.markdown(f'<span class="status-ok">{t["status_ollama_ok"]}</span>', 
+                                    unsafe_allow_html=True)
         else:
-            st.markdown(f'<span class="status-err">{t["status_ollama_err"]}</span>', unsafe_allow_html=True)
+            st.markdown(f'<span class="status-err">{t["status_ollama_err"]}</span>', 
+                                    unsafe_allow_html=True)
     with col_b:
         if api_key_ok:
-            st.markdown(f'<span class="status-ok">{t["status_api_ok"]}</span>', unsafe_allow_html=True)
+            st.markdown(f'<span class="status-ok">{t["status_api_ok"]}</span>', 
+                                    unsafe_allow_html=True)
         else:
-            st.markdown(f'<span class="status-err">{t["status_api_err"]}</span>', unsafe_allow_html=True)
+            st.markdown(f'<span class="status-err">{t["status_api_err"]}</span>', 
+                                    unsafe_allow_html=True)
 
     if st.session_state.tree:
         st.divider()
@@ -191,7 +193,6 @@ with st.sidebar:
                 )
             st.rerun()
         st.divider()
-        
         st.markdown(t["active_doc"])
         st.caption(f"**{st.session_state.pdf_name}**")
 
@@ -238,10 +239,8 @@ if not st.session_state.tree:
 
                 try:
                     progress = st.progress(0, text=t["p_init"])
-                    progress.progress(20, text=t["p_parse"])
-                    
-                    tree = run_pipeline(tmp_path)
-                    
+                    progress.progress(20, text=t["p_parse"])                   
+                    tree = run_pipeline(tmp_path)                   
                     progress.progress(100, text=t["p_ready"])
                     st.session_state.tree = tree
                     st.session_state.pdf_name = uploaded_file.name
@@ -258,7 +257,7 @@ if not st.session_state.tree:
 
         st.markdown("<div style='height: 1rem'></div>", unsafe_allow_html=True)
 
-        # Grille d'exemples d'utilisation
+        # grid of usage examples
         cols = st.columns(3)
         hints = [
             ("📝", t["hint_1_title"], t["hint_1_desc"]),
@@ -279,7 +278,7 @@ if not st.session_state.tree:
                 )
 
 else:
-    # ── Interface de Discussion (Chat Area) ────────────────────────────────────
+    # ── chat Area ────────────────────────────────────────────────────────────
     if not st.session_state.messages:
         node_count = count_nodes(st.session_state.tree)
         st.markdown(
@@ -293,7 +292,7 @@ else:
             unsafe_allow_html=True,
         )
 
-    # Affichage de l'historique des messages
+    # history of messages
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
@@ -305,7 +304,7 @@ else:
                     for s in msg["sources"]:
                         st.markdown(f"- {s}")
 
-    # Zone de saisie utilisateur
+    # user input area
     if prompt := st.chat_input(
         t["chat_input_placeholder"],
         disabled=not ollama_ok,
@@ -313,27 +312,24 @@ else:
         if not ollama_ok:
             st.error(t["err_ollama_disconnected"])
         else:
-            # Enregistrement et affichage immédiat de la question
+            # Adding and displaying user question
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
 
             with st.chat_message("assistant"):
                 with st.spinner(t["spinner_analyzing"]):
-                    # Exécution de votre nouveau pipeline corrigé
+                    # Execution of the new corrected pipeline
                     result = vectorless_rag_no_loss(
                         query=prompt,
                         tree=st.session_state.tree,
                         model=model
-                    )
-                
-                # Affichage de la réponse finale
+                    )  
+                # Displaying the final answer
                 st.markdown(result["answer"])
-                
-                # Affichage transparent du routage du Vectorless RAG
+                # Displaying the routing of the Vectorless RAG
                 with st.expander(t["expander_thinking"], expanded=False):
-                    st.info(result["thinking"])
-                    
+                    st.info(result["thinking"])                  
                 if result.get("retrieved_sections"):
                     with st.expander(t["expander_sources"], expanded=False):
                         for s in result["retrieved_sections"]:
@@ -344,7 +340,7 @@ else:
                             st.markdown(f"**Context Chunk {idx+1}:**")
                             st.markdown(f"```text\n{chunk}\n```")
                             st.markdown("---")
-            # Persistance dans l'historique de session
+            # Persistence in the session history
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": result["answer"],
