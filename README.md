@@ -114,8 +114,7 @@ graph-paper-ai/
 │   ├── generate_conversational.py  # Synthetic QA dataset generator (Goldens)
 │   ├── llm_judge.py                # NVIDIA OpenAI-compatible LLM Judge wrapper
 │   ├── model_callback.py           # DeepEval Pytest evaluation suite
-│   └── report.py                   # Automated batch evaluation report script
-├── file/                           # PDF input directory
+│   └── report.py                   # Batch evaluation report script
 ├── test_data/                      # Cached trees & synthetic evaluation datasets
 ├── pyproject.toml                  # Project metadata & pytest configuration
 ├── requirements.txt
