@@ -17,7 +17,7 @@ DICTIONARY = {
         "hero_sub": "Recherche et analyse de papiers scientifiques sans vecteurs.",
         "uploader_label": "Glissez un fichier PDF ici pour commencer",
         "err_api": "Veuillez configurer la clé LLAMA_CLOUD_API_KEY dans votre fichier .env.",
-        "err_ollama": "Impossible de joindre Ollama. Assurez-vous que le modèle '{model}' est lancé.",# noqa: E501
+        "err_ollama": "Impossible de joindre Ollama. Assurez-vous que le modèle '{model}' est lancé.",  # noqa: E501
         "p_init": "Initialisation…",
         "p_parse": "Parsing du document avec LlamaCloud (Agentic)...",
         "p_ready": "Prêt !",
@@ -38,7 +38,6 @@ DICTIONARY = {
         "chat_input_placeholder": "Posez une question sur le texte ou les tableaux du document...",
         "err_ollama_disconnected": "Ollama n'est pas connecté.",
         "spinner_analyzing": "Analyse de la structure et génération de la réponse...",
-
     },
     "en": {
         "switch_btn": "🌐 Passer en Français",
@@ -58,7 +57,7 @@ DICTIONARY = {
         "hero_sub": "Search and analysis of scientific papers without vectors.",
         "uploader_label": "Drag and drop a PDF file here to begin",
         "err_api": "Please configure the LLAMA_CLOUD_API_KEY key in your .env file.",
-        "err_ollama": "Unable to reach Ollama. Make sure the model '{model}' is running.",# noqa: E501
+        "err_ollama": "Unable to reach Ollama. Make sure the model '{model}' is running.",  # noqa: E501
         "p_init": "Initialization…",
         "p_parse": "Parsing document with LlamaCloud (Agentic)...",
         "p_ready": "Ready!",
@@ -79,6 +78,5 @@ DICTIONARY = {
         "chat_input_placeholder": "Ask a question about the document text or tables...",
         "err_ollama_disconnected": "Ollama is disconnected.",
         "spinner_analyzing": "Analyzing structure and generating response...",
-
-    }
+    },
 }

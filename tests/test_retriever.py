@@ -7,11 +7,13 @@ Tests cover:
   - get_node_full_text : content aggregation for leaf/empty nodes
   - retrieve_nodes     : tree traversal, parent expansion, ordering, fallback
 """
+
 from __future__ import annotations
 
 from src.retrieval.retriever import get_node_full_text, retrieve_nodes
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 def _make_tree() -> list[dict]:
     """
@@ -27,48 +29,65 @@ def _make_tree() -> list[dict]:
     """
     return [
         {
-            "node_id": "0000", "title": "Introduction",
-            "page_start": 1, "page_end": 2,
+            "node_id": "0000",
+            "title": "Introduction",
+            "page_start": 1,
+            "page_end": 2,
             "content": "This paper addresses a key problem.",
             "nodes": [
                 {
-                    "node_id": "0001", "title": "Background",
-                    "page_start": 1, "page_end": 1,
+                    "node_id": "0001",
+                    "title": "Background",
+                    "page_start": 1,
+                    "page_end": 1,
                     "content": "Background context on prior work.",
-                    "parent_id": "0000", "nodes": [],
+                    "parent_id": "0000",
+                    "nodes": [],
                 },
                 {
-                    "node_id": "0002", "title": "Prior Work",
-                    "page_start": 2, "page_end": 2,
-                    "content": "",                    # empty — should aggregate from children
+                    "node_id": "0002",
+                    "title": "Prior Work",
+                    "page_start": 2,
+                    "page_end": 2,
+                    "content": "",  # empty — should aggregate from children
                     "parent_id": "0000",
                     "nodes": [
                         {
-                            "node_id": "0003", "title": "Dataset",
-                            "page_start": 2, "page_end": 2,
+                            "node_id": "0003",
+                            "title": "Dataset",
+                            "page_start": 2,
+                            "page_end": 2,
                             "content": "We used the MNIST dataset.",
-                            "parent_id": "0002", "nodes": [],
+                            "parent_id": "0002",
+                            "nodes": [],
                         },
                     ],
                 },
             ],
         },
         {
-            "node_id": "0004", "title": "Methods",
-            "page_start": 3, "page_end": 4,
+            "node_id": "0004",
+            "title": "Methods",
+            "page_start": 3,
+            "page_end": 4,
             "content": "We applied a novel vectorless RAG approach.",
             "nodes": [
                 {
-                    "node_id": "0005", "title": "Experiment Setup",
-                    "page_start": 3, "page_end": 3,
+                    "node_id": "0005",
+                    "title": "Experiment Setup",
+                    "page_start": 3,
+                    "page_end": 3,
                     "content": "Experiments ran on GPU cluster.",
-                    "parent_id": "0004", "nodes": [],
+                    "parent_id": "0004",
+                    "nodes": [],
                 },
             ],
         },
         {
-            "node_id": "0006", "title": "Results",
-            "page_start": 5, "page_end": 6,
+            "node_id": "0006",
+            "title": "Results",
+            "page_start": 5,
+            "page_end": 6,
             "content": "Accuracy reached 98% on benchmark.",
             "nodes": [],
         },
@@ -76,6 +95,7 @@ def _make_tree() -> list[dict]:
 
 
 # ── get_node_full_text ────────────────────────────────────────────────────────
+
 
 def test_full_text_returns_own_content_when_present():
     node = {"content": "Direct content.", "nodes": []}
@@ -125,6 +145,7 @@ def test_full_text_strips_whitespace():
 
 # ── retrieve_nodes ────────────────────────────────────────────────────────────
 
+
 def test_retrieve_known_root_node(tmp_path):
     tree = _make_tree()
     result = retrieve_nodes(["0006"], tree)
@@ -142,7 +163,7 @@ def test_retrieve_adds_text_field():
 def test_retrieve_child_also_returns_parent():
     """Selecting a child node should expand to include its parent."""
     tree = _make_tree()
-    result = retrieve_nodes(["0001"], tree)    # 0001 is a child of 0000
+    result = retrieve_nodes(["0001"], tree)  # 0001 is a child of 0000
     ids = {n["node_id"] for n in result}
     assert "0001" in ids
     assert "0000" in ids, "Parent node should be included via parent expansion"

@@ -9,6 +9,7 @@ Tests cover:
   - _build_pure_text_tree: full tree construction from markdown
   - _make_sub_nodes    : long-node splitting into atomic sub-nodes
 """
+
 from __future__ import annotations
 
 from src.extraction.parser import (
@@ -19,6 +20,7 @@ from src.extraction.parser import (
 )
 
 # ── _count_tokens ─────────────────────────────────────────────────────────────
+
 
 def test_count_tokens_empty():
     assert _count_tokens("") == 1  # max(1, 0)
@@ -36,6 +38,7 @@ def test_count_tokens_proportional():
 
 # ── _split_long_content ───────────────────────────────────────────────────────
 
+
 def test_split_short_content_not_split():
     short = "Short text."
     result = _split_long_content(short, max_tokens=100)
@@ -44,7 +47,7 @@ def test_split_short_content_not_split():
 
 def test_split_long_content_splits_on_paragraphs():
     # Build a text with 3 long paragraphs, each > 100 tokens (~400+ chars each)
-    para = "word " * 120          # ~600 chars = 150 tokens
+    para = "word " * 120  # ~600 chars = 150 tokens
     text = f"{para}\n\n{para}\n\n{para}"
     result = _split_long_content(text, max_tokens=200)
     assert len(result) > 1
@@ -181,6 +184,7 @@ def test_content_attached_to_correct_node():
 
 # ── _make_sub_nodes ───────────────────────────────────────────────────────────
 
+
 def _make_dummy_parent(content: str) -> dict:
     return {
         "node_id": "0000",
@@ -208,7 +212,7 @@ def test_make_sub_nodes_empty_content():
 
 def test_make_sub_nodes_long_content_splits():
     # Create two very long paragraphs that will exceed MAX_TOKENS_PER_NODE (800)
-    para = "word " * 500   # ~2500 chars = ~625 tokens each → total 1250 tokens
+    para = "word " * 500  # ~2500 chars = ~625 tokens each → total 1250 tokens
     content = f"{para}\n\n{para}"
     parent = _make_dummy_parent(content)
     sub_nodes, _ = _make_sub_nodes(parent, node_counter=10)
@@ -236,9 +240,9 @@ def test_make_sub_nodes_inherit_page_range():
 
 def test_make_sub_nodes_table_boundary():
     """A TABLE caption should act as a split boundary."""
-    text_before = "word " * 300   # ~375 tokens
+    text_before = "word " * 300  # ~375 tokens
     table_block = "TABLE I. Results of the experiment\n" + "data " * 200
-    text_after  = "word " * 300
+    text_after = "word " * 300
     content = f"{text_before}\n{table_block}\n{text_after}"
     parent = _make_dummy_parent(content)
     sub_nodes, _ = _make_sub_nodes(parent, node_counter=5)

@@ -24,6 +24,7 @@ from src.pipeline import vectorless_rag_no_loss
 
 load_dotenv()
 
+
 def _get_or_build_tree() -> list[dict]:
     """Cache the parsed document tree locally to avoid PDF re-parsing on every test run."""
     cache_path = os.path.abspath(

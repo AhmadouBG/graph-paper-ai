@@ -12,6 +12,7 @@ Tests cover:
   - search()         : full routing pipeline (regex → BM25 → SLM)
   - Edge cases       : empty tree, no candidates
 """
+
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -20,37 +21,54 @@ from src.retrieval.tree_search import FastTreeRetriever
 
 # ── Fixture ───────────────────────────────────────────────────────────────────
 
+
 def _make_tree() -> list[dict]:
     return [
         {
-            "node_id": "intro", "title": "Introduction",
+            "node_id": "intro",
+            "title": "Introduction",
             "content": "This paper introduces a vectorless RAG pipeline.",
-            "page_start": 1, "page_end": 2, "nodes": [],
+            "page_start": 1,
+            "page_end": 2,
+            "nodes": [],
         },
         {
-            "node_id": "methods", "title": "Methods",
+            "node_id": "methods",
+            "title": "Methods",
             "content": "We apply BM25 and SLM re-ranking. See Figure 1.",
-            "page_start": 3, "page_end": 4, "nodes": [],
+            "page_start": 3,
+            "page_end": 4,
+            "nodes": [],
         },
         {
-            "node_id": "results", "title": "Results",
+            "node_id": "results",
+            "title": "Results",
             "content": "TABLE I. Overall accuracy results across benchmarks.",
-            "page_start": 5, "page_end": 6, "nodes": [],
+            "page_start": 5,
+            "page_end": 6,
+            "nodes": [],
         },
         {
-            "node_id": "conclusion", "title": "Conclusion",
+            "node_id": "conclusion",
+            "title": "Conclusion",
             "content": "Best performance is achieved by the proposed pipeline.",
-            "page_start": 7, "page_end": 7, "nodes": [],
+            "page_start": 7,
+            "page_end": 7,
+            "nodes": [],
         },
         {
-            "node_id": "fig_section", "title": "Figure 1 Analysis",
+            "node_id": "fig_section",
+            "title": "Figure 1 Analysis",
             "content": "Figure 1 shows the pipeline overview diagram.",
-            "page_start": 4, "page_end": 4, "nodes": [],
+            "page_start": 4,
+            "page_end": 4,
+            "nodes": [],
         },
     ]
 
 
 # ── Flattening ────────────────────────────────────────────────────────────────
+
 
 def test_flatten_top_level():
     tree = _make_tree()
@@ -61,11 +79,20 @@ def test_flatten_top_level():
 def test_flatten_nested_nodes():
     tree = [
         {
-            "node_id": "root", "title": "Root", "content": "",
-            "page_start": 1, "page_end": 2,
+            "node_id": "root",
+            "title": "Root",
+            "content": "",
+            "page_start": 1,
+            "page_end": 2,
             "nodes": [
-                {"node_id": "child", "title": "Child", "content": "text",
-                 "page_start": 1, "page_end": 1, "nodes": []},
+                {
+                    "node_id": "child",
+                    "title": "Child",
+                    "content": "text",
+                    "page_start": 1,
+                    "page_end": 1,
+                    "nodes": [],
+                },
             ],
         }
     ]
@@ -75,6 +102,7 @@ def test_flatten_nested_nodes():
 
 
 # ── tokenize ─────────────────────────────────────────────────────────────────
+
 
 def test_tokenize_lowercases():
     result = FastTreeRetriever.tokenize("Hello World")
@@ -91,6 +119,7 @@ def test_tokenize_empty_string():
 
 
 # ── Regex Pass (A) ────────────────────────────────────────────────────────────
+
 
 def test_regex_detects_figure_query():
     tree = _make_tree()
@@ -122,6 +151,7 @@ def test_regex_returns_empty_for_plain_query():
 
 
 # ── BM25 Pass (B) ─────────────────────────────────────────────────────────────
+
 
 def test_bm25_returns_candidates():
     tree = _make_tree()
@@ -160,6 +190,7 @@ def test_bm25_fallback_on_no_matches():
 
 
 # ── SLM Pass (C) — mocked ────────────────────────────────────────────────────
+
 
 def _make_retriever_with_mock_slm(mock_response_content: str) -> FastTreeRetriever:
     tree = _make_tree()
@@ -210,14 +241,17 @@ def test_slm_falls_back_on_bad_json():
     tree = _make_tree()
     r = FastTreeRetriever(tree)
     candidates = r.flattened_nodes[:3]
-    with patch("src.retrieval.tree_search.ollama.chat",
-               return_value={"message": {"content": "not valid json at all"}}):
+    with patch(
+        "src.retrieval.tree_search.ollama.chat",
+        return_value={"message": {"content": "not valid json at all"}},
+    ):
         result = r._slm_rerank("What is RAG?", candidates, top_k=2)
     assert "node_list" in result
     assert "BM25 Fallback" in result["thinking"]
 
 
 # ── search() — full routing ───────────────────────────────────────────────────
+
 
 def test_search_regex_short_circuits_for_figure():
     """If Regex pass matches, SLM is never called."""
@@ -235,8 +269,9 @@ def test_search_falls_through_to_bm25_and_slm():
     tree = _make_tree()
     r = FastTreeRetriever(tree)
     slm_json = '{"thinking": "intro is relevant", "node_list": ["intro"]}'
-    with patch("src.retrieval.tree_search.ollama.chat",
-               return_value={"message": {"content": slm_json}}):
+    with patch(
+        "src.retrieval.tree_search.ollama.chat", return_value={"message": {"content": slm_json}}
+    ):
         result = r.search("What is the main contribution of this paper?")
     assert "node_list" in result
     assert len(result["node_list"]) > 0
@@ -246,8 +281,9 @@ def test_search_returns_valid_structure():
     tree = _make_tree()
     r = FastTreeRetriever(tree)
     slm_json = '{"thinking": "ok", "node_list": ["results"]}'
-    with patch("src.retrieval.tree_search.ollama.chat",
-               return_value={"message": {"content": slm_json}}):
+    with patch(
+        "src.retrieval.tree_search.ollama.chat", return_value={"message": {"content": slm_json}}
+    ):
         result = r.search("Show me the results")
     assert "thinking" in result
     assert "node_list" in result

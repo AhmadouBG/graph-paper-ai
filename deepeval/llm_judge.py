@@ -138,8 +138,10 @@ class NvidiaJudgeModel(DeepEvalBaseLLM):
             except Exception as e:
                 if "429" in str(e) or "RateLimit" in type(e).__name__:
                     wait_time = (attempt + 1) * 6
-                    print(f"⚠️ Rate limit hit (429). Retrying in {wait_time}s... "
-                          f"(attempt {attempt+1}/8)")
+                    print(
+                        f"⚠️ Rate limit hit (429). Retrying in {wait_time}s... "
+                        f"(attempt {attempt + 1}/8)"
+                    )
                     time.sleep(wait_time)
                 else:
                     raise e
@@ -174,8 +176,10 @@ class NvidiaJudgeModel(DeepEvalBaseLLM):
                 except Exception as e:
                     if "429" in str(e) or "RateLimit" in type(e).__name__:
                         wait_time = (attempt + 1) * 6
-                        print(f"⚠️ Async Rate limit hit (429). Retrying in {wait_time}s... "
-                              f"(attempt {attempt+1}/8)")
+                        print(
+                            f"⚠️ Async Rate limit hit (429). Retrying in {wait_time}s... "
+                            f"(attempt {attempt + 1}/8)"
+                        )
                         await asyncio.sleep(wait_time)
                     else:
                         raise e
@@ -215,5 +219,6 @@ class NvidiaJudgeModel(DeepEvalBaseLLM):
 
     def get_model_name(self) -> str:
         return self.model_name
+
 
 nvidia_judge = NvidiaJudgeModel(reasoning_effort="low", max_tokens=2048)

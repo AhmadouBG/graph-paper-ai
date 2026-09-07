@@ -23,6 +23,7 @@ from src.pipeline import vectorless_rag_no_loss
 
 load_dotenv()
 
+
 def _get_or_build_tree() -> list[dict]:
     """Cache the parsed document tree locally to avoid PDF re-parsing on every report run."""
     cache_path = os.path.abspath(
@@ -60,7 +61,8 @@ dataset = EvaluationDataset()
 dataset.add_goldens_from_json_file(file_path="./test_data/rag_human_QA_pair.json")
 
 dataset.goldens = [
-    g for g in dataset.goldens
+    g
+    for g in dataset.goldens
     if g.additional_metadata is None
     or g.additional_metadata.get("synthetic_input_quality", 1.0) >= 0.7
 ]
@@ -69,12 +71,14 @@ dataset.goldens = [
 test_cases = []
 for golden in dataset.goldens:
     rag_output = vectorless_rag_no_loss(query=golden.input, tree=GLOBAL_TREE)
-    test_cases.append(LLMTestCase(
-        input=golden.input,
-        actual_output=rag_output["answer"],
-        expected_output=golden.expected_output,
-        retrieval_context=rag_output["retrieved_texts"],
-    ))
+    test_cases.append(
+        LLMTestCase(
+            input=golden.input,
+            actual_output=rag_output["answer"],
+            expected_output=golden.expected_output,
+            retrieval_context=rag_output["retrieved_texts"],
+        )
+    )
 
 # Run evaluation with concurrent async execution
 metrics = [
@@ -94,5 +98,5 @@ evaluate(
     display_config=DisplayConfig(
         print_results=True,
         results_folder="./evals/rag-pipeline",
-    )
+    ),
 )

@@ -8,6 +8,7 @@ Tests cover:
   - get_total_pages: finds the highest page number across the whole tree
   - vectorless_rag_no_loss: full end-to-end pipeline with all Ollama calls mocked
 """
+
 from __future__ import annotations
 
 import io
@@ -18,37 +19,51 @@ from src.pipeline import get_total_pages, print_tree, vectorless_rag_no_loss
 
 # ── Fixture ───────────────────────────────────────────────────────────────────
 
+
 def _make_tree() -> list[dict]:
     return [
         {
-            "node_id": "0000", "title": "Introduction",
-            "page_start": 1, "page_end": 3,
-            "content": "Intro text.", "text": "Intro text.",
+            "node_id": "0000",
+            "title": "Introduction",
+            "page_start": 1,
+            "page_end": 3,
+            "content": "Intro text.",
+            "text": "Intro text.",
             "nodes": [
                 {
-                    "node_id": "0001", "title": "Background",
-                    "page_start": 2, "page_end": 3,
-                    "content": "Background details.", "text": "Background details.",
+                    "node_id": "0001",
+                    "title": "Background",
+                    "page_start": 2,
+                    "page_end": 3,
+                    "content": "Background details.",
+                    "text": "Background details.",
                     "nodes": [],
                 },
             ],
         },
         {
-            "node_id": "0002", "title": "Methods",
-            "page_start": 4, "page_end": 7,
-            "content": "We propose a novel approach.", "text": "We propose a novel approach.",
+            "node_id": "0002",
+            "title": "Methods",
+            "page_start": 4,
+            "page_end": 7,
+            "content": "We propose a novel approach.",
+            "text": "We propose a novel approach.",
             "nodes": [],
         },
         {
-            "node_id": "0003", "title": "Results",
-            "page_start": 8, "page_end": 10,
-            "content": "Accuracy: 98%.", "text": "Accuracy: 98%.",
+            "node_id": "0003",
+            "title": "Results",
+            "page_start": 8,
+            "page_end": 10,
+            "content": "Accuracy: 98%.",
+            "text": "Accuracy: 98%.",
             "nodes": [],
         },
     ]
 
 
 # ── print_tree ────────────────────────────────────────────────────────────────
+
 
 def _capture_print_tree(tree) -> str:
     buf = io.StringIO()
@@ -87,6 +102,7 @@ def test_print_tree_empty_tree_no_crash():
 
 # ── get_total_pages ───────────────────────────────────────────────────────────
 
+
 def test_get_total_pages_flat_tree():
     tree = _make_tree()
     assert get_total_pages(tree) == 10  # Results ends on page 10
@@ -95,14 +111,26 @@ def test_get_total_pages_flat_tree():
 def test_get_total_pages_with_nested_deeper():
     tree = [
         {
-            "node_id": "0000", "title": "A",
-            "page_start": 1, "page_end": 2, "content": "", "nodes": [
+            "node_id": "0000",
+            "title": "A",
+            "page_start": 1,
+            "page_end": 2,
+            "content": "",
+            "nodes": [
                 {
-                    "node_id": "0001", "title": "B",
-                    "page_start": 1, "page_end": 5, "content": "", "nodes": [
+                    "node_id": "0001",
+                    "title": "B",
+                    "page_start": 1,
+                    "page_end": 5,
+                    "content": "",
+                    "nodes": [
                         {
-                            "node_id": "0002", "title": "C",
-                            "page_start": 3, "page_end": 15, "content": "", "nodes": [],
+                            "node_id": "0002",
+                            "title": "C",
+                            "page_start": 3,
+                            "page_end": 15,
+                            "content": "",
+                            "nodes": [],
                         }
                     ],
                 }
@@ -113,8 +141,9 @@ def test_get_total_pages_with_nested_deeper():
 
 
 def test_get_total_pages_single_page():
-    tree = [{"node_id": "x", "title": "X", "page_start": 1, "page_end": 1,
-             "content": "", "nodes": []}]
+    tree = [
+        {"node_id": "x", "title": "X", "page_start": 1, "page_end": 1, "content": "", "nodes": []}
+    ]
     assert get_total_pages(tree) == 1
 
 
@@ -124,6 +153,7 @@ def test_get_total_pages_empty_returns_one():
 
 
 # ── vectorless_rag_no_loss ────────────────────────────────────────────────────
+
 
 def _mock_tree_search_result(node_ids: list[str]) -> dict:
     return {"node_list": node_ids, "thinking": "Mocked routing decision."}
@@ -227,9 +257,12 @@ def test_rag_same_page_start_end_formats_single_page(mock_gen, mock_search):
     """When page_start == page_end, section label should be 'p. X' not 'p. X-X'."""
     tree = [
         {
-            "node_id": "n1", "title": "Single Page Section",
-            "page_start": 3, "page_end": 3,
-            "content": "Content here.", "text": "Content here.",
+            "node_id": "n1",
+            "title": "Single Page Section",
+            "page_start": 3,
+            "page_end": 3,
+            "content": "Content here.",
+            "text": "Content here.",
             "nodes": [],
         }
     ]

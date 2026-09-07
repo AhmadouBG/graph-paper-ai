@@ -21,7 +21,7 @@ class FastTreeRetriever:
 
         # Pre-compilation of the global regex for Pass A
         self.visual_routing_pattern = re.compile(
-            r'(?:(table)|(fig\.?|figure))\s+([a-zA-Z0-9_]+)', re.IGNORECASE
+            r"(?:(table)|(fig\.?|figure))\s+([a-zA-Z0-9_]+)", re.IGNORECASE
         )
 
         # Unique initialization of the BM25 engine (Pass B)
@@ -37,14 +37,40 @@ class FastTreeRetriever:
 
         # Mots-clés pour la détection d'intention comparative
         self.COMPARATIVE_KEYWORDS = {
-            "best", "worst", "compare", "comparison", "overall", "performance",
-            "conclusion", "versus", "vs", "summary", "highest", "lowest", "rank",
-            "ranking", "evaluate", "evaluation", "which", "aim", "goal", "purpose",
-            "objective"
+            "best",
+            "worst",
+            "compare",
+            "comparison",
+            "overall",
+            "performance",
+            "conclusion",
+            "versus",
+            "vs",
+            "summary",
+            "highest",
+            "lowest",
+            "rank",
+            "ranking",
+            "evaluate",
+            "evaluation",
+            "which",
+            "aim",
+            "goal",
+            "purpose",
+            "objective",
         }
         self.SYNTHESIS_SECTION_KEYWORDS = {
-            "performance", "introduction", "analysis", "conclusion", "discussion", "results",
-            "result", "comparison", "summary", "evaluation", "overview"
+            "performance",
+            "introduction",
+            "analysis",
+            "conclusion",
+            "discussion",
+            "results",
+            "result",
+            "comparison",
+            "summary",
+            "evaluation",
+            "overview",
         }
 
         self.COMPARATIVE_PHRASE_MIN_HITS = 2
@@ -60,12 +86,12 @@ class FastTreeRetriever:
     def tokenize(text: str) -> list[str]:
         """Cleans and tokenizes text."""
         text = text.lower()
-        text = re.sub(r'[^\w\s]', ' ', text)
+        text = re.sub(r"[^\w\s]", " ", text)
         return text.split()
 
     def find_visual_element_by_regex(self, query: str, top_k: int = 3) -> list[str]:
         """Optimized Pass A: Deterministic detection by Regex."""
-        cleaned_query = re.sub(r'\s+', ' ', query.lower().strip())
+        cleaned_query = re.sub(r"\s+", " ", query.lower().strip())
         match = self.visual_routing_pattern.search(cleaned_query)
 
         if not match:
@@ -77,7 +103,7 @@ class FastTreeRetriever:
 
         matched_indices = []
         visual_pattern = re.compile(
-            rf'(?:table|fig\.?|figure)\s+{re.escape(target_number)}(?:\b|[^a-z0-9_]|<)',
+            rf"(?:table|fig\.?|figure)\s+{re.escape(target_number)}(?:\b|[^a-z0-9_]|<)",
             re.IGNORECASE,
         )
 
@@ -156,11 +182,13 @@ class FastTreeRetriever:
             nid = n["node_id"]
             valid_ids.add(nid)
             preview = n.get("content", "").strip()[:400]
-            candidate_catalog.append({
-                "node_id": nid,
-                "title": n["title"],
-                "content_preview": preview if preview else "(no text content)"
-            })
+            candidate_catalog.append(
+                {
+                    "node_id": nid,
+                    "title": n["title"],
+                    "content_preview": preview if preview else "(no text content)",
+                }
+            )
 
         prompt = (
             f"You are a precise RAG routing agent. Select at most {top_k} node IDs.\n"
@@ -182,11 +210,11 @@ class FastTreeRetriever:
                     "num_ctx": 1524,
                     "num_predict": 128,
                     "keep_alive": "10m",
-                }
+                },
             )
 
             raw_content = response["message"]["content"]
-            match = re.search(r'\{.*\}', raw_content, re.DOTALL)
+            match = re.search(r"\{.*\}", raw_content, re.DOTALL)
 
             if match:
                 parsed = json.loads(match.group(0))
@@ -199,7 +227,7 @@ class FastTreeRetriever:
                     thinking = parsed.get("thinking", "SLM semantic routing.")
                     return {
                         "thinking": f"🤖 [{self.slm_model}] {thinking}",
-                        "node_list": filtered_ids[:top_k]
+                        "node_list": filtered_ids[:top_k],
                     }
 
         except Exception as e:
@@ -210,7 +238,7 @@ class FastTreeRetriever:
         fallback_titles = [n["title"] for n in candidates[:top_k]]
         return {
             "thinking": f"🔍 [BM25 Fallback] Selected: {', '.join(fallback_titles)}",
-            "node_list": fallback_ids
+            "node_list": fallback_ids,
         }
 
     def search(self, query: str, top_k: int = 3) -> dict:
@@ -224,7 +252,7 @@ class FastTreeRetriever:
             titles = [n["title"] for n in self.flattened_nodes if n["node_id"] in regex_matched_ids]
             return {
                 "thinking": f"🎯 [Regex] Composant visuel trouvé dans : {', '.join(titles)}",
-                "node_list": regex_matched_ids
+                "node_list": regex_matched_ids,
             }
 
         # 2. Passe B : Pré-filtrage rapide des candidats avec BM25
@@ -236,10 +264,7 @@ class FastTreeRetriever:
 
 # --- FONCTION DE COMPATIBILITÉ POUR LE PIPELINE ET DEEPEVAL ---
 def llm_tree_search_ollama(
-    query: str,
-    tree: list,
-    model: str = "qwen2.5:1.5b-instruct-q4_K_M",
-    top_k: int = 3
+    query: str, tree: list, model: str = "qwen2.5:1.5b-instruct-q4_K_M", top_k: int = 3
 ) -> dict:
     """
     Fonction wrapper standard du pipeline RAG.

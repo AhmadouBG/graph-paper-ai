@@ -9,6 +9,7 @@ def get_node_full_text(node: dict) -> str:
 
     # If node content is empty, aggregate content from child nodes
     child_texts = []
+
     def collect(ns):
         for child in ns:
             c = child.get("content", "").strip()
@@ -16,10 +17,12 @@ def get_node_full_text(node: dict) -> str:
                 child_texts.append(f"### {child.get('title', '')}\n{c}")
             if child.get("nodes"):
                 collect(child["nodes"])
+
     if node.get("nodes"):
         collect(node["nodes"])
 
     return "\n\n".join(child_texts)
+
 
 def retrieve_nodes(selected_ids: list[str], tree: list[dict]) -> list[dict]:
     """
@@ -81,7 +84,6 @@ def retrieve_nodes(selected_ids: list[str], tree: list[dict]) -> list[dict]:
     section_titles = [n["title"] for n in retrieved]
     print(f"🎯 Retrieved node IDs (with parent expansion): {node_ids}")
     print(f"📄 Sections found: {section_titles}")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
     return retrieved
-

@@ -17,22 +17,26 @@ def print_tree(nodes: list[dict], indent: int = 0) -> None:
         if node.get("nodes"):
             print_tree(node["nodes"], indent + 1)
 
+
 def get_total_pages(nodes: list[dict]) -> int:
     """Parcourt l'arbre complet et retourne la page de fin la plus élevée."""
     max_page = 1
+
     def walk(ns):
         nonlocal max_page
         for n in ns:
             max_page = max(max_page, n.get("page_end", 1), n.get("page_start", 1))
             if n.get("nodes"):
                 walk(n["nodes"])
+
     walk(nodes)
     return max_page
+
 
 def vectorless_rag_no_loss(
     query: str,
     tree: list[dict],
-    model: str = "qwen2.5:3b"  # 100% local par défaut
+    model: str = "qwen2.5:3b",  # 100% local par défaut
 ) -> dict:  # Retourne un dictionnaire avec la réponse et le raisonnement pour l'UI Streamlit
     """
     Pipeline Vectorless RAG hiérarchique complet :
@@ -60,11 +64,7 @@ def vectorless_rag_no_loss(
 
     # 3. Generator (Génération de la réponse finale avec citations)
     print("🧠 Génération de la réponse ancrée (Ollama)...")
-    answer = generate_answer(
-         query=query,
-         nodes=retrieved_nodes,
-         model=model
-    )
+    answer = generate_answer(query=query, nodes=retrieved_nodes, model=model)
 
     retrieved_sections = []
     retrieved_texts = []
@@ -80,6 +80,5 @@ def vectorless_rag_no_loss(
         "answer": answer,
         "thinking": thinking,
         "retrieved_sections": retrieved_sections,
-        "retrieved_texts": retrieved_texts
+        "retrieved_texts": retrieved_texts,
     }
-

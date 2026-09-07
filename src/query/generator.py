@@ -23,7 +23,7 @@ def generate_answer(query: str, nodes: list, model: str = "qwen2.5:3b") -> str:
         )
     context = "\n\n---\n\n".join(context_parts)
 
-    print("="*60 + "\n" + "CONTEXT : " + context + "\n" + "="*60 + "\n")
+    print("=" * 60 + "\n" + "CONTEXT : " + context + "\n" + "=" * 60 + "\n")
 
     user_prompt = f"""You are an expert document analyst.
 Answer the question using ONLY the provided context.
@@ -41,19 +41,17 @@ Answer:"""
         # 3. Appel à l'instance locale d'Ollama
         response = ollama.chat(
             model=model,
-            messages=[
-                {"role": "user", "content": user_prompt}
-            ],
+            messages=[{"role": "user", "content": user_prompt}],
             options={
                 "temperature": 0.0,  # Température basse pour garantir la fidélité au texte source
                 "num_ctx": 2048,
                 "num_predict": 512,
-                "keep_alive": "10m"
-                    # Fenêtre étendue pour accueillir tout le contenu des nœuds extraits
-            }
+                "keep_alive": "10m",
+                # Fenêtre étendue pour accueillir tout le contenu des nœuds extraits
+            },
         )
 
-        return response['message']['content']
+        return response["message"]["content"]
 
     except Exception as e:
         return f"⚠️ Erreur lors de la génération de la réponse avec Ollama : {str(e)}"

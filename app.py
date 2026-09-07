@@ -30,7 +30,8 @@ st.set_page_config(
 DEFAULT_MODEL = "qwen2.5:3b"
 
 # ── Custom CSS (Nettoyé des styles inutilisés) ─────────────────────────────────
-st.markdown("""
+st.markdown(
+    """
 <style>
 [data-testid="stSidebar"] { border-right: 1px solid #e2e8f0; }
 [data-testid="stHeader"] { background: transparent; }
@@ -94,14 +95,17 @@ hr { border-color: #e2e8f0; }
 ::-webkit-scrollbar { width: 2px; }
 ::-webkit-scrollbar-thumb { border-radius: 4px; }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 DEFAULT_MODEL = "qwen2.5:3b"
+
 
 # ── Core Pipeline (Version purement textuelle) ────────────────────────────────
 def run_pipeline(pdf_path: str) -> list[dict]:
     """Exécute le parsing LlamaCloud et construit l'arbre sémantique pur."""
-    t = DICTIONARY[st.session_state.lang] # Accès à la langue courante
+    t = DICTIONARY[st.session_state.lang]  # Accès à la langue courante
     api_key = os.environ.get("LLAMA_CLOUD_API_KEY") or os.environ.get("LLAMACLOUD_API_KEY")
     if not api_key:
         st.error(t["err_missing_api_env"])
@@ -121,6 +125,7 @@ def run_pipeline(pdf_path: str) -> list[dict]:
         tree = _build_pure_text_tree(markdown_content)
     return tree
 
+
 def check_ollama(model: str) -> bool:
     """Vérifie si l'instance locale Ollama est accessible."""
     try:
@@ -129,6 +134,7 @@ def check_ollama(model: str) -> bool:
     except Exception:
         return False
 
+
 def count_nodes(nodes: list[dict]) -> int:
     """Compte récursivement le nombre total de nœuds dans l'arbre."""
     c = len(nodes)
@@ -136,6 +142,7 @@ def count_nodes(nodes: list[dict]) -> int:
         if n.get("nodes"):
             c += count_nodes(n["nodes"])
     return c
+
 
 # ── Initialize session state ───────────────────────────────────────────
 for key, default in [
@@ -151,9 +158,11 @@ for key, default in [
 # short cut for writing translations
 t = DICTIONARY[st.session_state.lang]
 
+
 def toggle_language():
     """Bascule d'une langue à l'autre."""
     st.session_state.lang = "en" if st.session_state.lang == "fr" else "fr"
+
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -164,35 +173,33 @@ with st.sidebar:
     model = st.text_input(t["lbl_model"], value=DEFAULT_MODEL, help=t["help_model"])
 
     ollama_ok = check_ollama(model)
-    api_key_ok = bool(
-        os.environ.get("LLAMA_CLOUD_API_KEY") or os.environ.get("LLAMACLOUD_API_KEY")
-    )
+    api_key_ok = bool(os.environ.get("LLAMA_CLOUD_API_KEY") or os.environ.get("LLAMACLOUD_API_KEY"))
 
     col_a, col_b = st.columns(2)
     with col_a:
         if ollama_ok:
-            st.markdown(f'<span class="status-ok">{t["status_ollama_ok"]}</span>',
-                        unsafe_allow_html=True)
+            st.markdown(
+                f'<span class="status-ok">{t["status_ollama_ok"]}</span>', unsafe_allow_html=True
+            )
         else:
-            st.markdown(f'<span class="status-err">{t["status_ollama_err"]}</span>',
-                        unsafe_allow_html=True)
+            st.markdown(
+                f'<span class="status-err">{t["status_ollama_err"]}</span>', unsafe_allow_html=True
+            )
     with col_b:
         if api_key_ok:
-            st.markdown(f'<span class="status-ok">{t["status_api_ok"]}</span>',
-                        unsafe_allow_html=True)
+            st.markdown(
+                f'<span class="status-ok">{t["status_api_ok"]}</span>', unsafe_allow_html=True
+            )
         else:
-            st.markdown(f'<span class="status-err">{t["status_api_err"]}</span>',
-                        unsafe_allow_html=True)
+            st.markdown(
+                f'<span class="status-err">{t["status_api_err"]}</span>', unsafe_allow_html=True
+            )
 
     if st.session_state.tree:
         st.divider()
         if st.button(t["btn_new_doc"], use_container_width=True):
             for key in ["tree", "messages", "pdf_name"]:
-                st.session_state[key] = (
-                    None if key == "tree"
-                    else [] if key == "messages"
-                    else ""
-                )
+                st.session_state[key] = None if key == "tree" else [] if key == "messages" else ""
             st.rerun()
         st.divider()
         st.markdown(t["active_doc"])
@@ -253,6 +260,7 @@ if not st.session_state.tree:
                 finally:
                     try:
                         import shutil
+
                         shutil.rmtree(tmpdir)
                     except Exception:
                         pass
@@ -322,9 +330,7 @@ else:
                 with st.spinner(t["spinner_analyzing"]):
                     # Execution of the new corrected pipeline
                     result = vectorless_rag_no_loss(
-                        query=prompt,
-                        tree=st.session_state.tree,
-                        model=model
+                        query=prompt, tree=st.session_state.tree, model=model
                     )
                 # Displaying the final answer
                 st.markdown(result["answer"])
@@ -338,15 +344,16 @@ else:
                 if result.get("retrieved_texts"):
                     with st.expander("Context Sources", expanded=False):
                         for idx, chunk in enumerate(result["retrieved_texts"]):
-                            st.markdown(f"**Context Chunk {idx+1}:**")
+                            st.markdown(f"**Context Chunk {idx + 1}:**")
                             st.markdown(f"```text\n{chunk}\n```")
                             st.markdown("---")
             # Persistence in the session history
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": result["answer"],
-                "thinking": result["thinking"],
-                "sources": result.get("retrieved_sections", []),
-                "retrieved_texts": result.get("retrieved_texts", []),
-            })
-
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": result["answer"],
+                    "thinking": result["thinking"],
+                    "sources": result.get("retrieved_sections", []),
+                    "retrieved_texts": result.get("retrieved_texts", []),
+                }
+            )

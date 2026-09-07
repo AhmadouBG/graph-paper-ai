@@ -14,6 +14,7 @@ from src.extraction.parser import _build_pure_text_tree, _parse_with_llamacloud
 
 load_dotenv()
 
+
 def extract_node_texts(nodes: list[dict]) -> list[str]:
     """Extract content from all tree nodes recursively."""
     texts = []
@@ -29,9 +30,9 @@ def extract_node_texts(nodes: list[dict]) -> list[str]:
 
 def generate_test_suite():
     print("⏳ Extracting PDF via LlamaCloud...")
-    pdf_path = os.path.abspath(os.path.join(
-        os.path.dirname(__file__), "..",
-        "file", "acharya2019.pdf"))
+    pdf_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "file", "acharya2019.pdf")
+    )
     page_dicts = _parse_with_llamacloud(pdf_path, os.getenv("LLAMACLOUD_API_KEY"))
     # Identical linear reconstruction
     markdown_chunks = []
@@ -57,10 +58,7 @@ def generate_test_suite():
     filtration_config = FiltrationConfig(critic_model=nvidia_judge)
 
     synthesizer = Synthesizer(
-        model=nvidia_judge,
-        filtration_config=filtration_config,
-        async_mode=False,
-        max_concurrent=1
+        model=nvidia_judge, filtration_config=filtration_config, async_mode=False, max_concurrent=1
     )
 
     print("🧠 Generating Q&A pairs via NVIDIA (openai/gpt-oss-120b)...")
@@ -75,11 +73,7 @@ def generate_test_suite():
         return
 
     dataset = EvaluationDataset(goldens=goldens)
-    dataset.save_as(
-        file_type="json",
-        directory="./test_data",
-        file_name="rag_test_dataset"
-    )
+    dataset.save_as(file_type="json", directory="./test_data", file_name="rag_test_dataset")
     print("🎉 Done ! Dataset saved in ./test_data/rag_test_dataset.json")
 
 
