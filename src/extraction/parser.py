@@ -175,8 +175,8 @@ def _make_sub_nodes(parent_node: dict, node_counter: int) -> tuple[list[dict], i
 
 def _build_pure_text_tree(markdown_text: str) -> list[dict]:
     """
-    Construit un arbre de documents sémantique à partir du Markdown de LlamaCloud.
-    Optimisé pour les articles scientifiques.
+    Build a tree of documents sémantique from the Markdown of LlamaCloud.
+    Optimised for scientific papers.
     """
     text_with_page_tags = re.sub(r"---\s*Page\s*(\d+)\s*---", r"[[PAGE_\1]]", markdown_text)
     lines = text_with_page_tags.split("\n")
