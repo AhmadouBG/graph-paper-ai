@@ -9,10 +9,7 @@ Tests cover:
 """
 from __future__ import annotations
 
-import pytest
-
 from src.retrieval.retriever import get_node_full_text, retrieve_nodes
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

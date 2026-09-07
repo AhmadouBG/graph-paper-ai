@@ -1,7 +1,9 @@
 import json
 import re
+
 import ollama
 from rank_bm25 import BM25Okapi
+
 
 class FastTreeRetriever:
     """
@@ -46,7 +48,7 @@ class FastTreeRetriever:
         }
 
         self.COMPARATIVE_PHRASE_MIN_HITS = 2
-        
+
     def _flatten(self, nodes: list[dict]) -> None:
         """Flattens the node tree recursively."""
         for n in nodes:
@@ -160,25 +162,16 @@ class FastTreeRetriever:
                 "content_preview": preview if preview else "(no text content)"
             })
 
-        prompt = f"""You are a precise RAG routing agent. Select at most {top_k} node IDs that best answer the question.
-
-User Question: "{query}"
-
-Available Candidate Nodes:
-{json.dumps(candidate_catalog, ensure_ascii=False, indent=2)}
-
-Instructions:
-1. Order node_list from MOST relevant to LEAST relevant — the first ID must be the single best match.
-2. For comparative, evaluation, or summary questions, ensure you select synthesis or conclusion nodes.
-3. Return ONLY a single valid JSON object with NO extra text or markdown fences.
-4. Use the exact valid node_id values listed above.
-
-JSON Format:
-{{
-  "thinking": "Short 1-sentence reasoning",
-  "node_list": ["most_relevant_id", "second_most_relevant_id"]
-}}
-"""
+        prompt = (
+            f"You are a precise RAG routing agent. Select at most {top_k} node IDs.\n"
+            f'User Question: "{query}"\n'
+            f"Available Candidate Nodes:\n"
+            f"{json.dumps(candidate_catalog, ensure_ascii=False, indent=2)}\n"
+            f"Instructions:\n"
+            f"1. Order node_list from MOST to LEAST relevant.\n"
+            f"2. Return ONLY a single valid JSON object.\n"
+            f'JSON Format: {{"thinking": "Reasoning", "node_list": ["id1", "id2"]}}'
+        )
 
         try:
             response = ollama.chat(

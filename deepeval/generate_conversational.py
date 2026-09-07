@@ -1,13 +1,16 @@
 import os
 import sys
+
 from dotenv import load_dotenv
-# Permet d'importer depuis le dossier src
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from deepeval.dataset import EvaluationDataset
 from deepeval.synthesizer import Synthesizer
 from deepeval.synthesizer.config import FiltrationConfig
 from llm_judge import nvidia_judge
-from src.extraction.parser import _parse_with_llamacloud, _build_pure_text_tree
+
+from src.extraction.parser import _build_pure_text_tree, _parse_with_llamacloud
 
 load_dotenv()
 
@@ -27,9 +30,9 @@ def extract_node_texts(nodes: list[dict]) -> list[str]:
 def generate_test_suite():
     print("⏳ Extracting PDF via LlamaCloud...")
     pdf_path = os.path.abspath(os.path.join(
-        os.path.dirname(__file__), "..", 
+        os.path.dirname(__file__), "..",
         "file", "acharya2019.pdf"))
-    page_dicts = _parse_with_llamacloud(pdf_path, os.getenv("LLAMACLOUD_API_KEY"))   
+    page_dicts = _parse_with_llamacloud(pdf_path, os.getenv("LLAMACLOUD_API_KEY"))
     # Identical linear reconstruction
     markdown_chunks = []
     for page_data in page_dicts:
@@ -77,7 +80,7 @@ def generate_test_suite():
         directory="./test_data",
         file_name="rag_test_dataset"
     )
-    print(f"🎉 Done ! Dataset saved in ./test_data/rag_test_dataset.json")
+    print("🎉 Done ! Dataset saved in ./test_data/rag_test_dataset.json")
 
 
 if __name__ == "__main__":

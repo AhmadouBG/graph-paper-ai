@@ -5,6 +5,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from deepeval.dataset import EvaluationDataset
+from deepeval.evaluate import AsyncConfig, DisplayConfig
 from deepeval.metrics import (
     AnswerRelevancyMetric,
     ContextualPrecisionMetric,
@@ -12,12 +13,12 @@ from deepeval.metrics import (
     ContextualRelevancyMetric,
     FaithfulnessMetric,
 )
-from llm_judge import nvidia_judge
-from deepeval.evaluate import AsyncConfig, DisplayConfig
-from deepeval import evaluate
 from deepeval.test_case import LLMTestCase
 from dotenv import load_dotenv
-from src.extraction.parser import _parse_with_llamacloud, _build_pure_text_tree
+from llm_judge import nvidia_judge
+
+from deepeval import evaluate
+from src.extraction.parser import _build_pure_text_tree, _parse_with_llamacloud
 from src.pipeline import vectorless_rag_no_loss
 
 load_dotenv()

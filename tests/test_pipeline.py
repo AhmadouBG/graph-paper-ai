@@ -12,12 +12,9 @@ from __future__ import annotations
 
 import io
 import sys
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from src.pipeline import get_total_pages, print_tree, vectorless_rag_no_loss
-
 
 # ── Fixture ───────────────────────────────────────────────────────────────────
 

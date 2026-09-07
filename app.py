@@ -3,11 +3,13 @@ import logging
 import os
 import sys
 import tempfile
+
 import ollama
 import streamlit as st
 from dotenv import load_dotenv
+
 from src.extraction.parser import _build_pure_text_tree, _parse_with_llamacloud
-from src.pipeline import vectorless_rag_no_loss, print_tree, get_total_pages
+from src.pipeline import get_total_pages, print_tree, vectorless_rag_no_loss
 from src.utils.dictionary import DICTIONARY
 
 load_dotenv()
@@ -169,18 +171,18 @@ with st.sidebar:
     col_a, col_b = st.columns(2)
     with col_a:
         if ollama_ok:
-            st.markdown(f'<span class="status-ok">{t["status_ollama_ok"]}</span>', 
-                                    unsafe_allow_html=True)
+            st.markdown(f'<span class="status-ok">{t["status_ollama_ok"]}</span>',
+                        unsafe_allow_html=True)
         else:
-            st.markdown(f'<span class="status-err">{t["status_ollama_err"]}</span>', 
-                                    unsafe_allow_html=True)
+            st.markdown(f'<span class="status-err">{t["status_ollama_err"]}</span>',
+                        unsafe_allow_html=True)
     with col_b:
         if api_key_ok:
-            st.markdown(f'<span class="status-ok">{t["status_api_ok"]}</span>', 
-                                    unsafe_allow_html=True)
+            st.markdown(f'<span class="status-ok">{t["status_api_ok"]}</span>',
+                        unsafe_allow_html=True)
         else:
-            st.markdown(f'<span class="status-err">{t["status_api_err"]}</span>', 
-                                    unsafe_allow_html=True)
+            st.markdown(f'<span class="status-err">{t["status_api_err"]}</span>',
+                        unsafe_allow_html=True)
 
     if st.session_state.tree:
         st.divider()
@@ -239,8 +241,8 @@ if not st.session_state.tree:
 
                 try:
                     progress = st.progress(0, text=t["p_init"])
-                    progress.progress(20, text=t["p_parse"])                   
-                    tree = run_pipeline(tmp_path)                   
+                    progress.progress(20, text=t["p_parse"])
+                    tree = run_pipeline(tmp_path)
                     progress.progress(100, text=t["p_ready"])
                     st.session_state.tree = tree
                     st.session_state.pdf_name = uploaded_file.name
@@ -291,7 +293,6 @@ else:
             </div>""",
             unsafe_allow_html=True,
         )
-
     # history of messages
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
@@ -324,12 +325,12 @@ else:
                         query=prompt,
                         tree=st.session_state.tree,
                         model=model
-                    )  
+                    )
                 # Displaying the final answer
                 st.markdown(result["answer"])
                 # Displaying the routing of the Vectorless RAG
                 with st.expander(t["expander_thinking"], expanded=False):
-                    st.info(result["thinking"])                  
+                    st.info(result["thinking"])
                 if result.get("retrieved_sections"):
                     with st.expander(t["expander_sources"], expanded=False):
                         for s in result["retrieved_sections"]:

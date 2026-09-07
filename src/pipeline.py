@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from src.query.generator import generate_answer  # ✨ Changé pour la version Ollama
+from src.retrieval.retriever import retrieve_nodes
+
 # Importation de vos modules corrigés
 from src.retrieval.tree_search import llm_tree_search_ollama
-from src.retrieval.retriever import retrieve_nodes
-from src.query.generator import generate_answer  # ✨ Changé pour la version Ollama
+
 
 def print_tree(nodes: list[dict], indent: int = 0) -> None:
     """Affiche récursivement les titres de l'arbre pour un aperçu visuel."""
@@ -38,18 +40,18 @@ def vectorless_rag_no_loss(
       2. Retriever    — Récupère et déduplique le contenu complet des nœuds
       3. Generator    — Synthétise le contexte et génère la réponse ancrée via Ollama
     """
-    
+
     # 1. Tree Search (Aiguillage sémantique sur l'arbre compressé)
     print("🔍 Execution du LLM Tree Search (Ollama)...")
     search_result = llm_tree_search_ollama(
-        query=query, 
-        tree=tree, 
+        query=query,
+        tree=tree,
     )
-    
+
     # Extraction de la liste d'IDs depuis le dictionnaire JSON renvoyé par Qwen
     node_ids = search_result.get("node_list", [])
     thinking = search_result.get("thinking", "Pas de raisonnement fourni.")
-    
+
     print(f"💡 Raisonnement du routeur : {thinking}")
 
     # 2. Retriever (Extraction récursive et sécurisée des nœuds)
@@ -63,7 +65,7 @@ def vectorless_rag_no_loss(
          nodes=retrieved_nodes,
          model=model
     )
-    
+
     retrieved_sections = []
     retrieved_texts = []
     for n in retrieved_nodes:
@@ -72,7 +74,7 @@ def vectorless_rag_no_loss(
         page_str = f"p. {p_start}" if p_start == p_end else f"p. {p_start}-{p_end}"
         retrieved_sections.append(f"{n['title']} ({page_str})")
         retrieved_texts.append(n.get("text") or n.get("content", ""))
-     
+
     # Pratique pour Streamlit : On renvoie la réponse ET le raisonnement du choix des nœuds
     return {
         "answer": answer,

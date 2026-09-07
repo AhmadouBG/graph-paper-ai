@@ -11,15 +11,12 @@ Tests cover:
 """
 from __future__ import annotations
 
-import pytest
-
 from src.extraction.parser import (
     _build_pure_text_tree,
     _count_tokens,
     _make_sub_nodes,
     _split_long_content,
 )
-
 
 # ── _count_tokens ─────────────────────────────────────────────────────────────
 

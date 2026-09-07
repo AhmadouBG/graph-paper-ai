@@ -1,8 +1,10 @@
 from __future__ import annotations
+
 import hashlib
 import logging
-from pathlib import Path
 import re
+from pathlib import Path
+
 from dotenv import load_dotenv
 from llama_cloud import LlamaCloud
 
@@ -19,27 +21,27 @@ def _calculate_file_hash(file_path: str) -> str:
 
 def _parse_with_llamacloud(pdf_path: str, api_key: str, project_id: str = None) -> list[dict]:
     # 1. Initialisation of the client
-    client = LlamaCloud(api_key=api_key)    
+    client = LlamaCloud(api_key=api_key)
     # 2. Getting the unique hash of the temporary file
     file_hash = _calculate_file_hash(pdf_path)
     uploaded_file_id = None
-    print(f"""Searching for the file in LlamaCloud 
+    print(f"""Searching for the file in LlamaCloud
                         (Project ID: {project_id or 'Default'})...""")
     # 3. Listing files only within the target project
-    # Note: Pass project_id in the filters if the SDK API allows, 
+    # Note: Pass project_id in the filters if the SDK API allows,
     # or manually filter the file_info attributes
     files_list = client.files.list(project_id=project_id) if project_id else client.files.list()
     for file_info in files_list:
         # 1. Primary verification via the hash stored in external_file_id
         if getattr(file_info, "external_file_id", None) == file_hash:
             uploaded_file_id = file_info.id
-            print(f"""✨ Identical file found in the project via hash 
+            print(f"""✨ Identical file found in the project via hash
                     (ID: {uploaded_file_id}). Cache activated!""")
             break
         # 2. Secondary verification (fallback) via the exact name of the original file
         elif getattr(file_info, "name", None) == Path(pdf_path).name:
             uploaded_file_id = file_info.id
-            print(f"""✨ Identical file found in the project via name 
+            print(f"""✨ Identical file found in the project via name
                     (ID: {uploaded_file_id}). Cache activated!""")
             break
 
@@ -47,7 +49,7 @@ def _parse_with_llamacloud(pdf_path: str, api_key: str, project_id: str = None) 
     if not uploaded_file_id:
         print("Uploading temporary file to the project...")
         uploaded_file = client.files.create(
-            file=Path(pdf_path), 
+            file=Path(pdf_path),
             purpose="parse",
             project_id=project_id, # Explicitly associates the file with the project
             external_file_id=file_hash # Associates the unique hash of the file
@@ -69,12 +71,12 @@ def _parse_with_llamacloud(pdf_path: str, api_key: str, project_id: str = None) 
         result_dict = result.dict() if hasattr(result, "dict") else vars(result)
         pages = result_dict.get("markdown", {}).get("pages", [])
     for p in pages:
-        p_status = (getattr(p, "success", True) 
+        p_status = (getattr(p, "success", True)
                     if not isinstance(p, dict) else p.get("success", True))
         if p_status:
-            page_num = (getattr(p, "page_number", None) 
+            page_num = (getattr(p, "page_number", None)
                     if not isinstance(p, dict) else p.get("page_number"))
-            md_content = (getattr(p, "markdown", "") 
+            md_content = (getattr(p, "markdown", "")
                     if not isinstance(p, dict) else p.get("markdown", ""))
             pages_data.append({"page": page_num, "md": md_content or ""})
 
@@ -201,7 +203,10 @@ def _build_pure_text_tree(markdown_text: str) -> list[dict]:
     for line in lines:
         cleaned_line = line.strip()
         if not cleaned_line:
-            if stack and any("</table" in  line_of_content for line_of_content in stack[-1]["node"]["content_lines"][-5:]):
+            if stack and any(
+                "</table" in line_of_content
+                for line_of_content in stack[-1]["node"]["content_lines"][-5:]
+            ):
                 stack[-1]["node"]["content_lines"].append("")
             continue
 

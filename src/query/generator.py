@@ -1,5 +1,6 @@
 import ollama
 
+
 def generate_answer(query: str, nodes: list, model: str = "qwen2.5:3b") -> str:
     """
     Génère une réponse ancrée dans le contexte fourni en utilisant Ollama (Qwen 2.5).
@@ -7,7 +8,7 @@ def generate_answer(query: str, nodes: list, model: str = "qwen2.5:3b") -> str:
     """
     if not nodes:
         return "⚠️ Aucune section pertinente n'a été trouvée dans le document."
-    
+
     # 1. Reconstruction précise du contexte avec vos vraies clés (content, page_start, page_end)
     context_parts = []
     for node in nodes:
@@ -15,13 +16,13 @@ def generate_answer(query: str, nodes: list, model: str = "qwen2.5:3b") -> str:
         p_start = node.get("page_start", "?")
         p_end = node.get("page_end", "?")
         page_info = f"Page {p_start}" if p_start == p_end else f"Pages {p_start}-{p_end}"
-        
+
         context_parts.append(
             f"[Section: '{node['title']}' | {page_info}]\n"
             f"{node.get('text') or node.get('content', 'Contenu non disponible.')}"
         )
     context = "\n\n---\n\n".join(context_parts)
-    
+
     print("="*60 + "\n" + "CONTEXT : " + context + "\n" + "="*60 + "\n")
 
     user_prompt = f"""You are an expert document analyst.
@@ -35,7 +36,7 @@ Context:
 {context}
 
 Answer:"""
-    
+
     try:
         # 3. Appel à l'instance locale d'Ollama
         response = ollama.chat(
@@ -51,7 +52,7 @@ Answer:"""
                     # Fenêtre étendue pour accueillir tout le contenu des nœuds extraits
             }
         )
-        
+
         return response['message']['content']
 
     except Exception as e:

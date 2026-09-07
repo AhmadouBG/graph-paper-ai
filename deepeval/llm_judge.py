@@ -6,6 +6,7 @@ import re
 import threading
 import time
 from collections import deque
+
 from deepeval.models.base_model import DeepEvalBaseLLM
 from dotenv import load_dotenv
 from openai import AsyncOpenAI, OpenAI
@@ -75,8 +76,8 @@ class NvidiaJudgeModel(DeepEvalBaseLLM):
     def __init__(
         self,
         model: str = "openai/gpt-oss-120b",
-        reasoning_effort: str = "low", 
-        max_tokens: int = 2048,          
+        reasoning_effort: str = "low",
+        max_tokens: int = 2048,
     ):
         self.model_name = model
         self.reasoning_effort = reasoning_effort

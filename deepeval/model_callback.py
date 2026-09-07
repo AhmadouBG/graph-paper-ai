@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+
 import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -15,10 +16,11 @@ from deepeval.metrics import (
 )
 from deepeval.test_case import LLMTestCase
 from dotenv import load_dotenv
-from deepeval import assert_test
-from src.extraction.parser import _parse_with_llamacloud, _build_pure_text_tree
-from src.pipeline import vectorless_rag_no_loss
 from llm_judge import nvidia_judge
+
+from deepeval import assert_test
+from src.extraction.parser import _build_pure_text_tree, _parse_with_llamacloud
+from src.pipeline import vectorless_rag_no_loss
 
 load_dotenv()
 

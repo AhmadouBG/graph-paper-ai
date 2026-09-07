@@ -14,12 +14,9 @@ Tests cover:
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from src.retrieval.tree_search import FastTreeRetriever
-
 
 # ── Fixture ───────────────────────────────────────────────────────────────────
 

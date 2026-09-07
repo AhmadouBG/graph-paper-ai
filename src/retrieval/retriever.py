@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 def get_node_full_text(node: dict) -> str:
     """Returns the content of a node, aggregating child sub-nodes if content is empty."""
     content = node.get("content", "").strip()
@@ -22,7 +23,7 @@ def get_node_full_text(node: dict) -> str:
 
 def retrieve_nodes(selected_ids: list[str], tree: list[dict]) -> list[dict]:
     """
-    Parcourt l'arbre de manière récursive, extrait les nœuds et les RE-TRIE 
+    Parcourt l'arbre de manière récursive, extrait les nœuds et les RE-TRIE
     selon leur ordre d'apparition original (chronologique) dans le document.
     Si un sous-nœud est sélectionné, inclut également sa section parente
     pour garantir un contexte comparatif complet (tables + texte).
