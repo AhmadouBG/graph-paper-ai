@@ -216,7 +216,7 @@ pytest tests/ -v --tb=short -m "not integration"
 
 ## 🔬 Evaluation & Benchmarking
 
-Graph Paper AI includes an automated evaluation pipeline powered by **DeepEval**.
+Graph Paper AI includes an automated evaluation pipeline powered by **DeepEval**. 
 
 ### 1. Generate Synthetic Test Dataset
 ```bash
@@ -232,6 +232,8 @@ deepeval test run deepeval/model_callback.py
 ```bash
 python deepeval/report.py
 ```
+This evaluation is based on a single document from which we extracted 11 samples; this golden dataset is a carefully curated collection of trusted, human-verified input and output pairs that acts as a ground truth for testing the AI system.
+
 <img width="679" height="178" alt="graph2" src="https://github.com/user-attachments/assets/c80e9f77-4052-414f-a40b-86e91ca9c1f6" />
 
 ---
