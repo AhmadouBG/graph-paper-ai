@@ -26,10 +26,10 @@ def get_node_full_text(node: dict) -> str:
 
 def retrieve_nodes(selected_ids: list[str], tree: list[dict]) -> list[dict]:
     """
-    Parcourt l'arbre de manière récursive, extrait les nœuds et les RE-TRIE
-    selon leur ordre d'apparition original (chronologique) dans le document.
-    Si un sous-nœud est sélectionné, inclut également sa section parente
-    pour garantir un contexte comparatif complet (tables + texte).
+    Traverse tree in a recursive manner, extracts the nodes and RE-TRIES
+    according to their original order of appearance (chronological) in the document.
+    If a sub-node is selected, it also includes its parent section
+    to guarantee a complete comparative context (tables + text).
     """
     # 1. Indexation et cartographie des parents
     all_nodes_map = {}

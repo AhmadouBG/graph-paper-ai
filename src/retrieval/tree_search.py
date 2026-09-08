@@ -242,27 +242,27 @@ class FastTreeRetriever:
         }
 
     def search(self, query: str, top_k: int = 3) -> dict:
-        """Point d'entrée principal du routeur hybride 3-pass."""
+        """Main point of hybrid router 3-pass."""
         if not self.flattened_nodes:
             return {"thinking": "L'arbre documentaire est vide.", "node_list": ["0000"]}
 
-        # 1. Passe A : Détection déterministe Regex (<1ms)
+        # 1. Regex deterministic detection (<1ms)
         regex_matched_ids = self.find_visual_element_by_regex(query, top_k)
         if regex_matched_ids:
             titles = [n["title"] for n in self.flattened_nodes if n["node_id"] in regex_matched_ids]
             return {
-                "thinking": f"🎯 [Regex] Composant visuel trouvé dans : {', '.join(titles)}",
+                "thinking": f"🎯 [Regex] Visual component found in : {', '.join(titles)}",
                 "node_list": regex_matched_ids,
             }
 
-        # 2. Passe B : Pré-filtrage rapide des candidats avec BM25
+        # 2. fast filtering of candidates with BM25
         candidates = self._bm25_candidate_filter(query, max_candidates=6)
 
-        # 3. Passe C : Sélection/Re-ranking sémantique par le SLM Qwen 1.5B
+        # 3. semantic selection/re-ranking by SLM Qwen 1.5B
         return self._slm_rerank(query, candidates, top_k=top_k)
 
 
-# --- FONCTION DE COMPATIBILITÉ POUR LE PIPELINE ET DEEPEVAL ---
+# --- COMPATIBILITY FUNCTION FOR PIPELINE AND DEEPEVAL ---
 def llm_tree_search_ollama(
     query: str, tree: list, model: str = "qwen2.5:1.5b-instruct-q4_K_M", top_k: int = 3
 ) -> dict:
