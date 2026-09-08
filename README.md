@@ -232,7 +232,9 @@ deepeval test run deepeval/model_callback.py
 ```bash
 python deepeval/report.py
 ```
+<img width="679" height="178" alt="graph2" src="https://github.com/user-attachments/assets/c80e9f77-4052-414f-a40b-86e91ca9c1f6" />
 
+Faithfulness and Answer Relevancy are strong — the model rarely hallucinates and stays on-topic. Contextual Precision/Relevancy are lower, which mostly reflects the retriever sometimes pulling in tangentially related sections alongside the right one — the next thing I'm iterating on.
 ---
 
 ## 🛡️ License
