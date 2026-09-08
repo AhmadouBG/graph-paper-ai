@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-from src.query.generator import generate_answer  # ✨ Changé pour la version Ollama
+from src.query.generator import generate_answer
 from src.retrieval.retriever import retrieve_nodes
-
-# Importation de vos modules corrigés
 from src.retrieval.tree_search import llm_tree_search_ollama
 
 
 def print_tree(nodes: list[dict], indent: int = 0) -> None:
-    """Affiche récursivement les titres de l'arbre pour un aperçu visuel."""
+    """display recursively the titles of the tree for a visual preview."""
     for node in nodes:
         prefix = "  " * indent + ("└─ " if indent > 0 else "")
-        # Utilisation de la clé officielle définie dans le parseur
+        # Use of the official key defined in the parser
         page = node.get("page_start") or "?"
         print(f"{prefix}[{node['node_id']}] {node['title']}  (p.{page})")
         if node.get("nodes"):
@@ -36,34 +34,32 @@ def get_total_pages(nodes: list[dict]) -> int:
 def vectorless_rag_no_loss(
     query: str,
     tree: list[dict],
-    model: str = "qwen2.5:3b",  # 100% local par défaut
-) -> dict:  # Retourne un dictionnaire avec la réponse et le raisonnement pour l'UI Streamlit
+    model: str = "qwen2.5:3b",
+) -> dict:
     """
-    Pipeline Vectorless RAG hiérarchique complet :
-      1. Tree Search  — Sélectionne les IDs des nœuds via Ollama (Sortie JSON)
-      2. Retriever    — Récupère et déduplique le contenu complet des nœuds
-      3. Generator    — Synthétise le contexte et génère la réponse ancrée via Ollama
+    Complete hierarchical Vectorless RAG pipeline :
+      1. Tree Search  — Selects node IDs via Ollama (JSON Output)
+      2. Retriever    — Retrieves and deduplicates full node content
+      3. Generator    — Synthesizes context and generates anchored response via Ollama
     """
 
-    # 1. Tree Search (Aiguillage sémantique sur l'arbre compressé)
-    print("🔍 Execution du LLM Tree Search (Ollama)...")
+    # 1. Tree Search (Semantic routing on the compressed tree)
+    print("🔍 Executing LLM Tree Search (Ollama)...")
     search_result = llm_tree_search_ollama(
         query=query,
         tree=tree,
     )
 
-    # Extraction de la liste d'IDs depuis le dictionnaire JSON renvoyé par Qwen
+    # Extraction of the list of IDs from the JSON dictionary returned by Qwen
     node_ids = search_result.get("node_list", [])
     thinking = search_result.get("thinking", "Pas de raisonnement fourni.")
 
-    print(f"💡 Raisonnement du routeur : {thinking}")
+    print(f"💡 Thinking of the routeur : {thinking}")
 
-    # 2. Retriever (Extraction récursive et sécurisée des nœuds)
-    print("📄 Récupération du contenu complet des nœuds...")
+    print("📄 Retrieving the full content of the nodes...")
     retrieved_nodes = retrieve_nodes(node_ids, tree)
 
-    # 3. Generator (Génération de la réponse finale avec citations)
-    print("🧠 Génération de la réponse ancrée (Ollama)...")
+    print("🧠 Generation of the answer (Ollama)...")
     answer = generate_answer(query=query, nodes=retrieved_nodes, model=model)
 
     retrieved_sections = []
@@ -75,7 +71,7 @@ def vectorless_rag_no_loss(
         retrieved_sections.append(f"{n['title']} ({page_str})")
         retrieved_texts.append(n.get("text") or n.get("content", ""))
 
-    # Pratique pour Streamlit : On renvoie la réponse ET le raisonnement du choix des nœuds
+    # Practise for Streamlit : return the answer and the reasoning of the choice of the nodes
     return {
         "answer": answer,
         "thinking": thinking,
