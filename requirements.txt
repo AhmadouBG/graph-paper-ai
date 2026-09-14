@@ -5,4 +5,4 @@ pytest
 ollama
 rank-bm25>=0.2.2
 python-dotenv>=1.0.0
-openai>=2.46.0
+openai>=3.13.0
