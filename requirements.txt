@@ -1,6 +1,6 @@
 streamlit==1.58.0
 llama-cloud>=2.16.0
-deepeval==4.1.2
+deepeval==4.2.6
 pytest
 ollama
 rank-bm25>=0.2.2
